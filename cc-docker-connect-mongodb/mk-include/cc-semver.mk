@@ -14,7 +14,8 @@ else
 DEFAULT_BUMP ?= patch
 endif
 
-VERSION := $(shell git rev-parse --is-inside-work-tree > /dev/null && git describe --tags --always --dirty)
+VERSION := $(patsubst r%,v%,$(shell git rev-parse --is-inside-work-tree > /dev/null && git describe --tags --always --dirty))
+
 ifneq (,$(findstring dirty,$(VERSION)))
 VERSION := $(VERSION)-$(USER)
 endif
