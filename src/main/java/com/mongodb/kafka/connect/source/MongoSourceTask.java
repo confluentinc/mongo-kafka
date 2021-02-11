@@ -425,6 +425,8 @@ public final class MongoSourceTask extends SourceTask {
         if (resumeTokenNotFound(e)) {
           throw new ConnectException(
               "ResumeToken not found. Cannot create a change stream cursor", e);
+        } else {
+          throw new ConnectException("Failed to resume change stream", e);
         }
       }
       return null;
