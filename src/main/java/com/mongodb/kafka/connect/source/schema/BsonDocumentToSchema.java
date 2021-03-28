@@ -85,7 +85,7 @@ public final class BsonDocumentToSchema {
             values.isEmpty() ? DEFAULT_INFER_SCHEMA_TYPE : inferSchema(fieldPath, values.get(0));
         if (values.isEmpty()
             || values.stream()
-            .anyMatch(bv -> !Objects.equals(inferSchema(fieldPath, bv), firstItemSchema))) {
+                .anyMatch(bv -> !Objects.equals(inferSchema(fieldPath, bv), firstItemSchema))) {
           return SchemaBuilder.array(DEFAULT_INFER_SCHEMA_TYPE).name(fieldPath).optional().build();
         }
         return SchemaBuilder.array(inferSchema(fieldPath, bsonValue.asArray().getValues().get(0)))
