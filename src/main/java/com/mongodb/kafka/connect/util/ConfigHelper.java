@@ -162,38 +162,37 @@ public final class ConfigHelper {
 
   @SuppressWarnings("deprecated")
   public static void logDeprecationWarnings(
-      Map<String, String> deprecatedPropertiesWithReplacements, Map<String, Object> originals) {
-    deprecatedPropertiesWithReplacements.forEach(
-        (deprecatedProperty, replacement) -> {
-          if (originals.containsKey(deprecatedProperty)) {
-            if (originals.containsKey(replacement)) {
-              LOGGER.info(
-                  "The property '{}' has been deprecated and will be removed in a future release in favor of the '{}' property, which if "
-                      + "specified will take precedence over the '{}' property. Since the '{}' property has already been specified in this "
-                      + "connector config, '{}' can be removed from the connector config safely.",
-                  deprecatedProperty,
-                  replacement,
-                  deprecatedProperty,
-                  replacement,
-                  deprecatedProperty);
-            } else {
-              LOGGER.warn(
-                  "The property '{}' has been deprecated and will be removed in a future release in favor of the '{}' property. Please update "
-                      + "the connector config to use the '{}' property in place of '{}'",
-                  deprecatedProperty,
-                  replacement,
-                  replacement,
-                  deprecatedProperty);
-            }
-          }
-        });
+      final String deprecatedProperty,
+      final String replacement,
+      final Map<String, Object> originals) {
+    if (originals.containsKey(deprecatedProperty)) {
+      if (originals.containsKey(replacement)) {
+        LOGGER.info(
+            "The property '{}' has been deprecated and will be removed in a future release in favor of the '{}' property, which if "
+                + "specified will take precedence over the '{}' property. Since the '{}' property has already been specified in this "
+                + "connector config, '{}' can be removed from the connector config safely.",
+            deprecatedProperty,
+            replacement,
+            deprecatedProperty,
+            replacement,
+            deprecatedProperty);
+      } else {
+        LOGGER.warn(
+            "The property '{}' has been deprecated and will be removed in a future release in favor of the '{}' property. Please update "
+                + "the connector config to use the '{}' property in place of '{}'",
+            deprecatedProperty,
+            replacement,
+            replacement,
+            deprecatedProperty);
+      }
+    }
   }
 
   public static <T> T readPropertyWithDeprecatedFallback(
-      String property,
-      String deprecatedFallback,
-      AbstractConfig config,
-      BiFunction<AbstractConfig, String, T> getter) {
+      final String property,
+      final String deprecatedFallback,
+      final AbstractConfig config,
+      final BiFunction<AbstractConfig, String, T> getter) {
     String propertyToRead =
         config.originals().containsKey(property) ? property : deprecatedFallback;
     return getter.apply(config, propertyToRead);

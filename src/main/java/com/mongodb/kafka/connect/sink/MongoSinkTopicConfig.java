@@ -384,12 +384,10 @@ public class MongoSinkTopicConfig extends AbstractConfig {
 
   @SuppressWarnings("deprecated")
   private void logDeprecationWarnings() {
-    Map<String, String> deprecatedPropertiesWithReplacements = new HashMap<>();
-    deprecatedPropertiesWithReplacements.put(
-        LEGACY_ERRORS_TOLERANCE_CONFIG, ERRORS_TOLERANCE_CONFIG);
-    deprecatedPropertiesWithReplacements.put(
-        LEGACY_ERRORS_LOG_ENABLE_CONFIG, ERRORS_LOG_ENABLE_CONFIG);
-    ConfigHelper.logDeprecationWarnings(deprecatedPropertiesWithReplacements, originals());
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_TOLERANCE_CONFIG, ERRORS_TOLERANCE_CONFIG, originals());
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_LOG_ENABLE_CONFIG, ERRORS_LOG_ENABLE_CONFIG, originals());
   }
 
   static final ConfigDef BASE_CONFIG = createConfigDef();
