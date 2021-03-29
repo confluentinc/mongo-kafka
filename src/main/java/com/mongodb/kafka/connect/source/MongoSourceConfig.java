@@ -29,7 +29,6 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.apache.kafka.common.config.ConfigDef.Width;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -354,14 +353,14 @@ public class MongoSourceConfig extends AbstractConfig {
 
   @SuppressWarnings("deprecated")
   private void logDeprecationWarnings() {
-    Map<String, String> deprecatedPropertiesWithReplacements = new HashMap<>();
-    deprecatedPropertiesWithReplacements.put(
-        LEGACY_ERRORS_TOLERANCE_CONFIG, ERRORS_TOLERANCE_CONFIG);
-    deprecatedPropertiesWithReplacements.put(
-        LEGACY_ERRORS_LOG_ENABLE_CONFIG, ERRORS_LOG_ENABLE_CONFIG);
-    deprecatedPropertiesWithReplacements.put(
-        LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC, ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG);
-    ConfigHelper.logDeprecationWarnings(deprecatedPropertiesWithReplacements, originals());
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_TOLERANCE_CONFIG, ERRORS_TOLERANCE_CONFIG, originals());
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_LOG_ENABLE_CONFIG, ERRORS_LOG_ENABLE_CONFIG, originals());
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC,
+        ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG,
+        originals());
   }
 
   public ConnectionString getConnectionString() {
