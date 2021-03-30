@@ -20,8 +20,6 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONF
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.CONNECTION_URI_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COPY_EXISTING_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
-import static com.mongodb.kafka.connect.source.MongoSourceConfig.ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG;
-import static com.mongodb.kafka.connect.source.MongoSourceConfig.ERRORS_LOG_ENABLE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.HEARTBEAT_INTERVAL_MS_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.HEARTBEAT_TOPIC_NAME_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME_MS_CONFIG;
@@ -303,17 +301,17 @@ public final class MongoSourceTask extends SourceTask {
                   "Exception creating Source record for: Key=%s Value=%s",
                   keyDocument.toJson(), valueDocument.toJson());
       if (sourceConfig.tolerateErrors()) {
-        if (sourceConfig.getBoolean(ERRORS_LOG_ENABLE_CONFIG)) {
+        if (sourceConfig.logErrors()) {
           LOGGER.error(errorMessage.get(), e);
         }
-        if (sourceConfig.getString(ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG).isEmpty()) {
+        if (sourceConfig.getDlqTopic().isEmpty()) {
           return Optional.empty();
         }
         return Optional.of(
             new SourceRecord(
                 partition,
                 sourceOffset,
-                sourceConfig.getString(ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG),
+                sourceConfig.getDlqTopic(),
                 Schema.STRING_SCHEMA,
                 keyDocument.toJson(),
                 Schema.STRING_SCHEMA,

@@ -161,11 +161,11 @@ public class SchemaAndValueProducerTest {
             .field(
                 "arrayComplex",
                 SchemaBuilder.array(
-                    SchemaBuilder.struct()
-                        .field("a", Schema.OPTIONAL_INT32_SCHEMA)
-                        .name("arrayComplex_a")
-                        .optional()
-                        .build())
+                        SchemaBuilder.struct()
+                            .field("a", Schema.OPTIONAL_INT32_SCHEMA)
+                            .name("arrayComplex_a")
+                            .optional()
+                            .build())
                     .optional()
                     .name("arrayComplex")
                     .build())
