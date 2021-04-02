@@ -39,7 +39,7 @@ plugins {
 }
 
 group = "org.mongodb.kafka"
-version = "1.5.0-SNAPSHOT"
+version = "1.6.0-SNAPSHOT"
 description = "The official MongoDB Apache Kafka Connect Connector."
 
 java {
@@ -48,13 +48,13 @@ java {
 }
 
 repositories {
-    maven("http://packages.confluent.io/maven/")
     mavenCentral()
+    maven("http://packages.confluent.io/maven/")
     maven("https://jitpack.io")
 }
 
 extra.apply {
-    set("mongodbDriverVersion", "[4.1,4.1.99)")
+    set("mongodbDriverVersion", "[4.2,4.2.99)")
     set("kafkaVersion", "2.6.0")
     set("avroVersion", "1.9.2")
 

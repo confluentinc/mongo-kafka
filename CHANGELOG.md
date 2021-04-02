@@ -5,19 +5,22 @@
 ## 1.5.0
 
 ### Improvements
-  - [KAFKA-168](https://jira.mongodb.org/browse/KAFKA-168) Added DeleteOneBusinessKeyStrategy for topics containing records to removed from MongoDB.
+  - [KAFKA-213](https://jira.mongodb.org/browse/KAFKA-213) Updated MongoDB Java Driver to 4.2.
+  - [KAFKA-168](https://jira.mongodb.org/browse/KAFKA-168) Added `DeleteOneBusinessKeyStrategy` for topics containing records to removed from MongoDB.
   - [KAFKA-183](https://jira.mongodb.org/browse/KAFKA-183) Added support for the errant record reporter if available.
   - [KAFKA-205](https://jira.mongodb.org/browse/KAFKA-205) Updated Source connector to use RawBsonDocuments.
-  - [KAFKA-201](https://jira.mongodb.org/browse/KAFKA-201) Improved copy.existing namespace handling.
+  - [KAFKA-201](https://jira.mongodb.org/browse/KAFKA-201) Improved `copy.existing` namespace handling.
   - [KAFKA-207](https://jira.mongodb.org/browse/KAFKA-207) Improved efficiency of heartbeats by making them tombstone messages.
   - [KAFKA-174](https://jira.mongodb.org/browse/KAFKA-174) Improved error messages when using invalid pipeline operators.
   - [KAFKA-194](https://jira.mongodb.org/browse/KAFKA-194) Added support for Qlik Replicate CDC.
 
 ### Bug Fixes
-  - [KAFKA-195](https://jira.mongodb.org/browse/KAFKA-195) Fixed topics.regex sink validation issue for synthetic config property
+  - [KAFKA-195](https://jira.mongodb.org/browse/KAFKA-195) Fixed `topics.regex` sink validation issue for synthetic config property
   - [KAFKA-203](https://jira.mongodb.org/browse/KAFKA-203) Fixed sink NPE issue when using with confluent connect 6.1.0
   - [KAFKA-209](https://jira.mongodb.org/browse/KAFKA-209) Fixed `_id` always being projected even if not explicitly allowed or blocked.
     Log a warning message when there the `_id` value and the id strategy is configured not to overwrite the `_id`.
+  - [KAFKA-210](https://jira.mongodb.org/browse/KAFKA-210) Fix inferred schema naming convention and ensure schemas can be backwards compatible.
+  - [KAFKA-212](https://jira.mongodb.org/browse/KAFKA-212) Ensure closing the change stream cursor doesn't leak any errors.
 
 ## 1.4.0
 
