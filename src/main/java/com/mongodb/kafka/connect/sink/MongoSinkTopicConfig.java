@@ -43,7 +43,8 @@ import org.apache.kafka.common.config.ConfigDef.Importance;
 import org.apache.kafka.common.config.ConfigDef.Type;
 import org.apache.kafka.common.config.ConfigDef.Width;
 import org.apache.kafka.common.config.ConfigValue;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.mongodb.kafka.connect.sink.cdc.CdcHandler;
 import com.mongodb.kafka.connect.sink.namespace.mapping.NamespaceMapper;
 import com.mongodb.kafka.connect.sink.processor.PostProcessors;
@@ -58,6 +59,8 @@ import com.mongodb.kafka.connect.util.ConnectConfigException;
 import com.mongodb.kafka.connect.util.Validators;
 
 public class MongoSinkTopicConfig extends AbstractConfig {
+
+  private static final Logger LOGGER = LoggerFactory.getLogger(MongoSinkTopicConfig.class);
 
   public enum FieldProjectionType {
     NONE,
@@ -251,7 +254,7 @@ public class MongoSinkTopicConfig extends AbstractConfig {
           + "(NO rate limiting if n=0)";
   private static final int RATE_LIMITING_EVERY_N_DEFAULT = 0;
 
-  public static final String ERRORS_TOLERANCE_CONFIG = "errors.tolerance";
+  public static final String ERRORS_TOLERANCE_CONFIG = "mongo.errors.tolerance";
   public static final String ERRORS_TOLERANCE_DISPLAY = "Error Tolerance";
   public static final ErrorTolerance ERRORS_TOLERANCE_DEFAULT = ErrorTolerance.NONE;
   public static final String ERRORS_TOLERANCE_DOC =
@@ -259,12 +262,26 @@ public class MongoSinkTopicConfig extends AbstractConfig {
           + "and signals that any error will result in an immediate connector task failure; 'all' "
           + "changes the behavior to skip over problematic records.";
 
-  public static final String ERRORS_LOG_ENABLE_CONFIG = "errors.log.enable";
+  @Deprecated
+  // Deprecated as it conflicts with the property of the same name used by the Connect framework
+  public static final String LEGACY_ERRORS_TOLERANCE_CONFIG = "errors.tolerance";
+
+  public static final String LEGACY_ERRORS_TOLERANCE_DOC =
+      "Deprecated; use '" + ERRORS_TOLERANCE_CONFIG + "' instead.";
+
+  public static final String ERRORS_LOG_ENABLE_CONFIG = "mongo.errors.log.enable";
   public static final String ERRORS_LOG_ENABLE_DISPLAY = "Log Errors";
   public static final boolean ERRORS_LOG_ENABLE_DEFAULT = false;
   public static final String ERRORS_LOG_ENABLE_DOC =
       "If true, write each error and the details of the failed operation and problematic record "
           + "to the Connect application log. This is 'false' by default, so that only errors that are not tolerated are reported.";
+
+  @Deprecated
+  // Deprecated as it conflicts with the property of the same name used by the Connect framework
+  public static final String LEGACY_ERRORS_LOG_ENABLE_CONFIG = "errors.log.enable";
+
+  public static final String LEGACY_ERRORS_LOG_ENABLE_DOC =
+      "Deprecated; use '" + ERRORS_LOG_ENABLE_CONFIG + "' instead.";
 
   public static final String NAMESPACE_MAPPER_CONFIG = "namespace.mapper";
   private static final String NAMESPACE_MAPPER_DISPLAY = "The namespace mapper class";
@@ -351,6 +368,7 @@ public class MongoSinkTopicConfig extends AbstractConfig {
 
   MongoSinkTopicConfig(final String topic, final Map<String, String> originals) {
     this(topic, originals, true);
+    logDeprecationWarnings();
   }
 
   private MongoSinkTopicConfig(
@@ -361,6 +379,14 @@ public class MongoSinkTopicConfig extends AbstractConfig {
     if (initializeAll) {
       INITIALIZERS.forEach(i -> i.accept(this));
     }
+  }
+
+  @SuppressWarnings("deprecated")
+  private void logDeprecationWarnings() {
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_TOLERANCE_CONFIG, ERRORS_TOLERANCE_CONFIG, originals());
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_LOG_ENABLE_CONFIG, ERRORS_LOG_ENABLE_CONFIG, originals());
   }
 
   static final ConfigDef BASE_CONFIG = createConfigDef();
@@ -378,13 +404,25 @@ public class MongoSinkTopicConfig extends AbstractConfig {
     return topic;
   }
 
+  @SuppressWarnings("deprecated")
   public boolean logErrors() {
-    return !tolerateErrors() || getBoolean(ERRORS_LOG_ENABLE_CONFIG);
+    return !tolerateErrors() ||
+        ConfigHelper.readPropertyWithDeprecatedFallback(
+            ERRORS_LOG_ENABLE_CONFIG,
+            LEGACY_ERRORS_LOG_ENABLE_CONFIG,
+            this,
+            AbstractConfig::getBoolean);
   }
 
+  @SuppressWarnings("deprecated")
   public boolean tolerateErrors() {
-    return ErrorTolerance.valueOf(getString(ERRORS_TOLERANCE_CONFIG).toUpperCase())
-        .equals(ErrorTolerance.ALL);
+    String errorsTolerance =
+        ConfigHelper.readPropertyWithDeprecatedFallback(
+            ERRORS_TOLERANCE_CONFIG,
+            LEGACY_ERRORS_TOLERANCE_CONFIG,
+            this,
+            AbstractConfig::getString);
+    return ErrorTolerance.valueOf(errorsTolerance.toUpperCase()).equals(ErrorTolerance.ALL);
   }
 
   private <T> T configureInstance(final T instance) {
@@ -594,6 +632,7 @@ public class MongoSinkTopicConfig extends AbstractConfig {
     return topicConfig;
   }
 
+  @SuppressWarnings("deprecated")
   private static ConfigDef createConfigDef() {
 
     ConfigDef configDef = new ConfigDef();
@@ -952,6 +991,17 @@ public class MongoSinkTopicConfig extends AbstractConfig {
         ++orderInGroup,
         Width.SHORT,
         ERRORS_TOLERANCE_DISPLAY);
+    configDef.define(
+        LEGACY_ERRORS_TOLERANCE_CONFIG,
+        Type.STRING,
+        ERRORS_TOLERANCE_DEFAULT.value(),
+        Validators.EnumValidatorAndRecommender.in(ErrorTolerance.values()),
+        Importance.MEDIUM,
+        LEGACY_ERRORS_TOLERANCE_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        ERRORS_TOLERANCE_DISPLAY);
 
     configDef.define(
         ERRORS_LOG_ENABLE_CONFIG,
@@ -959,6 +1009,16 @@ public class MongoSinkTopicConfig extends AbstractConfig {
         ERRORS_LOG_ENABLE_DEFAULT,
         Importance.MEDIUM,
         ERRORS_LOG_ENABLE_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        ERRORS_LOG_ENABLE_DISPLAY);
+    configDef.define(
+        LEGACY_ERRORS_LOG_ENABLE_CONFIG,
+        Type.BOOLEAN,
+        ERRORS_LOG_ENABLE_DEFAULT,
+        Importance.MEDIUM,
+        LEGACY_ERRORS_LOG_ENABLE_DOC,
         group,
         ++orderInGroup,
         Width.SHORT,

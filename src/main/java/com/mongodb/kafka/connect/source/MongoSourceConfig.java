@@ -272,7 +272,7 @@ public class MongoSourceConfig extends AbstractConfig {
           + "in the `demo` database: `demo\\.a.*`";
   private static final String COPY_EXISTING_NAMESPACE_REGEX_DEFAULT = "";
 
-  public static final String ERRORS_TOLERANCE_CONFIG = "errors.tolerance";
+  public static final String ERRORS_TOLERANCE_CONFIG = "mongo.errors.tolerance";
   public static final String ERRORS_TOLERANCE_DISPLAY = "Error Tolerance";
   public static final ErrorTolerance ERRORS_TOLERANCE_DEFAULT = ErrorTolerance.NONE;
   public static final String ERRORS_TOLERANCE_DOC =
@@ -280,15 +280,29 @@ public class MongoSourceConfig extends AbstractConfig {
           + "and signals that any error will result in an immediate connector task failure; 'all' "
           + "changes the behavior to skip over problematic records.";
 
-  public static final String ERRORS_LOG_ENABLE_CONFIG = "errors.log.enable";
+  @Deprecated
+  // Deprecated as it conflicts with the property of the same name used by the Connect framework
+  public static final String LEGACY_ERRORS_TOLERANCE_CONFIG = "errors.tolerance";
+
+  public static final String LEGACY_ERRORS_TOLERANCE_DOC =
+      "Deprecated; use '" + ERRORS_TOLERANCE_CONFIG + "' instead.";
+
+  public static final String ERRORS_LOG_ENABLE_CONFIG = "mongo.errors.log.enable";
   public static final String ERRORS_LOG_ENABLE_DISPLAY = "Log Errors";
   public static final boolean ERRORS_LOG_ENABLE_DEFAULT = false;
   public static final String ERRORS_LOG_ENABLE_DOC =
       "If true, write each error and the details of the failed operation and problematic record "
           + "to the Connect application log. This is 'false' by default, so that only errors that are not tolerated are reported.";
 
+  @Deprecated
+  // Deprecated as it conflicts with the property of the same name used by the Connect framework
+  public static final String LEGACY_ERRORS_LOG_ENABLE_CONFIG = "errors.log.enable";
+
+  public static final String LEGACY_ERRORS_LOG_ENABLE_DOC =
+      "Deprecated; use '" + ERRORS_LOG_ENABLE_CONFIG + "' instead.";
+
   public static final String ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG =
-      "errors.deadletterqueue.topic.name";
+      "mongo.errors.deadletterqueue.topic.name";
   public static final String ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DISPLAY =
       "Output errors to the dead letter queue";
   public static final String ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DEFAULT = "";
@@ -297,6 +311,14 @@ public class MongoSourceConfig extends AbstractConfig {
           + "Stops poison messages when using schemas, any message will be outputted as extended json on the specified topic. "
           + "By default messages are not outputted to the dead letter queue. "
           + "Also requires `errors.tolerance=all`.";
+
+  @Deprecated
+  // Deprecated as it conflicts with the property of the same name used by the Connect framework
+  public static final String LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG =
+      "errors.deadletterqueue.topic.name";
+
+  public static final String LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC =
+      "Deprecated; use '" + ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG + "' instead.";
 
   public static final String HEARTBEAT_INTERVAL_MS_CONFIG = "heartbeat.interval.ms";
   private static final String HEARTBEAT_INTERVAL_MS_DISPLAY = "Heartbeat interval";
@@ -352,6 +374,7 @@ public class MongoSourceConfig extends AbstractConfig {
 
   public MongoSourceConfig(final Map<?, ?> originals) {
     this(originals, true);
+    logDeprecationWarnings();
   }
 
   private MongoSourceConfig(final Map<?, ?> originals, final boolean validateAll) {
@@ -361,6 +384,18 @@ public class MongoSourceConfig extends AbstractConfig {
     if (validateAll) {
       INITIALIZERS.forEach(i -> i.accept(this));
     }
+  }
+
+  @SuppressWarnings("deprecated")
+  private void logDeprecationWarnings() {
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_TOLERANCE_CONFIG, ERRORS_TOLERANCE_CONFIG, originals());
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_LOG_ENABLE_CONFIG, ERRORS_LOG_ENABLE_CONFIG, originals());
+    ConfigHelper.logDeprecationWarnings(
+        LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC,
+        ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG,
+        originals());
   }
 
   public ConnectionString getConnectionString() {
@@ -424,13 +459,33 @@ public class MongoSourceConfig extends AbstractConfig {
         .getJsonWriterSettings();
   }
 
-  public boolean logErrors() {
-    return !tolerateErrors() || getBoolean(ERRORS_LOG_ENABLE_CONFIG);
+  @SuppressWarnings("deprecated")
+  public boolean tolerateErrors() {
+    String errorsTolerance =
+        ConfigHelper.readPropertyWithDeprecatedFallback(
+            ERRORS_TOLERANCE_CONFIG,
+            LEGACY_ERRORS_TOLERANCE_CONFIG,
+            this,
+            AbstractConfig::getString);
+    return ErrorTolerance.valueOf(errorsTolerance.toUpperCase()).equals(ErrorTolerance.ALL);
   }
 
-  public boolean tolerateErrors() {
-    return ErrorTolerance.valueOf(getString(ERRORS_TOLERANCE_CONFIG).toUpperCase())
-        .equals(ErrorTolerance.ALL);
+  @SuppressWarnings("deprecated")
+  public boolean logErrors() {
+    return !tolerateErrors()  || ConfigHelper.readPropertyWithDeprecatedFallback(
+        ERRORS_LOG_ENABLE_CONFIG,
+        LEGACY_ERRORS_LOG_ENABLE_CONFIG,
+        this,
+        AbstractConfig::getBoolean);
+  }
+
+  @SuppressWarnings("deprecated")
+  public String getDlqTopic() {
+    return ConfigHelper.readPropertyWithDeprecatedFallback(
+        ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG,
+        LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG,
+        this,
+        AbstractConfig::getString);
   }
 
   private <T extends Configurable> T configureInstance(final T instance) {
@@ -792,6 +847,17 @@ public class MongoSourceConfig extends AbstractConfig {
         ++orderInGroup,
         Width.SHORT,
         ERRORS_TOLERANCE_DISPLAY);
+    configDef.define(
+        LEGACY_ERRORS_TOLERANCE_CONFIG,
+        Type.STRING,
+        ERRORS_TOLERANCE_DEFAULT.value(),
+        Validators.EnumValidatorAndRecommender.in(ErrorTolerance.values()),
+        Importance.MEDIUM,
+        LEGACY_ERRORS_TOLERANCE_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        ERRORS_TOLERANCE_DISPLAY);
 
     configDef.define(
         ERRORS_LOG_ENABLE_CONFIG,
@@ -803,6 +869,16 @@ public class MongoSourceConfig extends AbstractConfig {
         ++orderInGroup,
         Width.SHORT,
         ERRORS_LOG_ENABLE_DISPLAY);
+    configDef.define(
+        LEGACY_ERRORS_LOG_ENABLE_CONFIG,
+        Type.BOOLEAN,
+        ERRORS_LOG_ENABLE_DEFAULT,
+        Importance.MEDIUM,
+        LEGACY_ERRORS_LOG_ENABLE_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        ERRORS_LOG_ENABLE_DISPLAY);
 
     configDef.define(
         ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG,
@@ -810,6 +886,16 @@ public class MongoSourceConfig extends AbstractConfig {
         ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DEFAULT,
         Importance.MEDIUM,
         ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DISPLAY);
+    configDef.define(
+        LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG,
+        Type.STRING,
+        ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DEFAULT,
+        Importance.MEDIUM,
+        LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC,
         group,
         ++orderInGroup,
         Width.SHORT,
