@@ -88,8 +88,6 @@ public class MongoSinkConfig extends AbstractConfig {
 
   static final String PROVIDER_CONFIG = "provider";
 
-  static final List<String> INVISIBLE_CONFIGS = singletonList(TOPIC_OVERRIDE_CONFIG);
-
   private Map<String, String> originals;
   private final Optional<List<String>> topics;
   private final Optional<Pattern> topicsRegex;
@@ -195,12 +193,7 @@ public class MongoSinkConfig extends AbstractConfig {
           @SuppressWarnings("unchecked")
           public Map<String, ConfigValue> validateAll(final Map<String, String> props) {
             Map<String, ConfigValue> results = super.validateAll(props);
-            INVISIBLE_CONFIGS.forEach(
-                c -> {
-                  if (results.containsKey(c)) {
-                    results.get(c).visible(false);
-                  }
-                });
+
             // Don't validate child configs if the top level configs are broken
             if (results.values().stream().anyMatch((c) -> !c.errorMessages().isEmpty())) {
               return results;
