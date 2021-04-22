@@ -86,7 +86,6 @@ public class MongoSinkConfig extends AbstractConfig {
           + TOPICS_CONFIG
           + "' are overridable.";
 
-  static final List<String> IGNORED_CONFIGS = singletonList(TOPIC_OVERRIDE_CONFIG);
 
   private Map<String, String> originals;
   private final Optional<List<String>> topics;
@@ -193,7 +192,6 @@ public class MongoSinkConfig extends AbstractConfig {
           @SuppressWarnings("unchecked")
           public Map<String, ConfigValue> validateAll(final Map<String, String> props) {
             Map<String, ConfigValue> results = super.validateAll(props);
-            IGNORED_CONFIGS.forEach(c -> results.remove(c));
             // Don't validate child configs if the top level configs are broken
             if (results.values().stream().anyMatch((c) -> !c.errorMessages().isEmpty())) {
               return results;
