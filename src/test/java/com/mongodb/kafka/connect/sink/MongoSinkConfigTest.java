@@ -172,7 +172,6 @@ class MongoSinkConfigTest {
     Set<String> expectedKeys = new HashSet<>(MongoSinkConfig.CONFIG.configKeys().keySet());
     expectedKeys.addAll(MongoSinkTopicConfig.CONFIG.configKeys().keySet());
     // Remove ignored configs
-    expectedKeys.removeAll(MongoSinkConfig.IGNORED_CONFIGS);
     expectedKeys.removeAll(MongoSinkTopicConfig.IGNORED_CONFIGS);
 
     // Added declared overrides
