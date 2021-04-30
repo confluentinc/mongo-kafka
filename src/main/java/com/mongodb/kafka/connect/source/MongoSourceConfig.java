@@ -475,7 +475,7 @@ public class MongoSourceConfig extends AbstractConfig {
     int orderInGroup = 0;
     configDef.define(
         CONNECTION_URI_CONFIG,
-        Type.STRING,
+        Type.PASSWORD,
         CONNECTION_URI_DEFAULT,
         errorCheckingValueValidator("A valid connection string", ConnectionString::new),
         Importance.HIGH,
