@@ -40,7 +40,7 @@ plugins {
 }
 
 group = "org.mongodb.kafka"
-version = "1.3.3"
+version = "1.3.4"
 description = "The official MongoDB Apache Kafka Connect Connector."
 
 java {
