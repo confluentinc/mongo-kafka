@@ -37,6 +37,8 @@ import org.apache.kafka.common.config.types.Password;
 
 public final class Validators {
 
+  private static String REDACTED_URL = "[REDACTED URL]";
+
   public interface ValidatorWithOperators extends ConfigDef.Validator {
     default ValidatorWithOperators or(final ValidatorWithOperators other) {
       return withStringDef(
@@ -154,7 +156,7 @@ public final class Validators {
           try {
             consumer.accept((String) value);
           } catch (Exception e) {
-            throw new ConfigException(name, value, e.getMessage());
+            throw new ConfigException(name, REDACTED_URL, e.getMessage());
           }
         }));
   }
