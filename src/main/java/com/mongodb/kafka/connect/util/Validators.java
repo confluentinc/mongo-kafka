@@ -33,8 +33,11 @@ import java.util.regex.Pattern;
 
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.config.types.Password;
 
 public final class Validators {
+
+  private static String REDACTED_URL = "[REDACTED URL]";
 
   public interface ValidatorWithOperators extends ConfigDef.Validator {
     default ValidatorWithOperators or(final ValidatorWithOperators other) {
@@ -136,6 +139,34 @@ public final class Validators {
       @Override
       public void ensureValid(final String name, final Object value) {
         validator.ensureValid(name, value);
+      }
+
+      @Override
+      public String toString() {
+        return validatorString;
+      }
+    };
+  }
+
+  public static ValidatorWithOperators errorCheckingPasswordValueValidator(
+      final String validValuesString, final Consumer<String> consumer) {
+    return withPasswordDef(
+        validValuesString,
+        ((name, value) -> {
+          try {
+            consumer.accept((String) value);
+          } catch (Exception e) {
+            throw new ConfigException(name, REDACTED_URL, e.getMessage());
+          }
+        }));
+  }
+
+  public static ValidatorWithOperators withPasswordDef(
+      final String validatorString, final ConfigDef.Validator validator) {
+    return new ValidatorWithOperators() {
+      @Override
+      public void ensureValid(final String name, final Object value) {
+        validator.ensureValid(name, ((Password) value).value());
       }
 
       @Override
