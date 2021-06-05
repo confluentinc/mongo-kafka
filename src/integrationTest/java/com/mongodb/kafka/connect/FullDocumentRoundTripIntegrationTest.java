@@ -19,7 +19,7 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONF
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COPY_EXISTING_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.ERRORS_LOG_ENABLE_CONFIG;
-import static com.mongodb.kafka.connect.source.MongoSourceConfig.ERRORS_TOLERANCE_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.LEGACY_ERRORS_TOLERANCE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.OUTPUT_FORMAT_VALUE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.OUTPUT_JSON_FORMATTER_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.OUTPUT_SCHEMA_INFER_VALUE_CONFIG;
@@ -214,7 +214,7 @@ public class FullDocumentRoundTripIntegrationTest extends MongoKafkaTestCase {
       sourceProperties.put(PUBLISH_FULL_DOCUMENT_ONLY_CONFIG, "true");
       sourceProperties.put("value.converter", "io.confluent.connect.avro.AvroConverter");
       sourceProperties.put("value.converter.schema.registry.url", KAFKA.schemaRegistryUrl());
-      sourceProperties.put(ERRORS_TOLERANCE_CONFIG, ErrorTolerance.ALL.value());
+      sourceProperties.put(LEGACY_ERRORS_TOLERANCE_CONFIG, ErrorTolerance.ALL.value());
       sourceProperties.put(ERRORS_LOG_ENABLE_CONFIG, "true");
 
       Properties sinkProperties = new Properties();
