@@ -22,11 +22,16 @@ import static com.mongodb.kafka.connect.sink.MongoSinkConfig.PROVIDER_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.MAX_NUM_RETRIES_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.RETRIES_DEFER_TIMEOUT_CONFIG;
 import static com.mongodb.kafka.connect.util.ConfigHelper.getMongoDriverInformation;
+import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
+import static com.mongodb.kafka.connect.util.TimeseriesValidation.validateCollection;
 import static java.util.Collections.emptyList;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -47,8 +52,10 @@ import org.slf4j.LoggerFactory;
 import org.bson.BsonDocument;
 
 import com.mongodb.MongoBulkWriteException;
+import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoException;
 import com.mongodb.MongoNamespace;
+import com.mongodb.bulk.BulkWriteError;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
@@ -64,6 +71,7 @@ public class MongoSinkTask extends SinkTask {
   private MongoSinkConfig sinkConfig;
   private MongoClient mongoClient;
   private Map<String, AtomicInteger> remainingRetriesTopicMap;
+  private Set<MongoNamespace> checkedTimeseriesNamespaces;
   private Consumer<MongoProcessedSinkRecordData> errorReporter;
 
   @Override
@@ -81,6 +89,7 @@ public class MongoSinkTask extends SinkTask {
     LOGGER.info("Starting MongoDB sink task");
     try {
       sinkConfig = new MongoSinkConfig(props);
+      checkedTimeseriesNamespaces = new HashSet<>();
       remainingRetriesTopicMap =
           new ConcurrentHashMap<>(
               sinkConfig.getTopics().orElse(emptyList()).stream()
@@ -177,12 +186,24 @@ public class MongoSinkTask extends SinkTask {
 
   private MongoClient getMongoClient() {
     if (mongoClient == null) {
+      MongoClientSettings.Builder builder =
+          MongoClientSettings.builder().applyConnectionString(sinkConfig.getConnectionString());
+      setServerApi(builder, sinkConfig);
       mongoClient =
           MongoClients.create(
-              sinkConfig.getConnectionString(),
+              builder.build(),
               getMongoDriverInformation(CONNECTOR_TYPE, sinkConfig.getString(PROVIDER_CONFIG)));
     }
     return mongoClient;
+  }
+
+  private void checkTimeseries(final MongoNamespace namespace, final MongoSinkTopicConfig config) {
+    if (!checkedTimeseriesNamespaces.contains(namespace)) {
+      if (config.isTimeseries()) {
+        validateCollection(getMongoClient(), namespace, config);
+      }
+      checkedTimeseriesNamespaces.add(namespace);
+    }
   }
 
   private void bulkWriteBatch(final List<MongoProcessedSinkRecordData> batch) {
@@ -190,13 +211,15 @@ public class MongoSinkTask extends SinkTask {
       return;
     }
 
+    MongoNamespace namespace = batch.get(0).getNamespace();
+    MongoSinkTopicConfig config = batch.get(0).getConfig();
+    checkTimeseries(namespace, config);
+
     List<WriteModel<BsonDocument>> writeModels =
         batch.stream()
             .map(MongoProcessedSinkRecordData::getWriteModel)
             .collect(Collectors.toList());
 
-    MongoNamespace namespace = batch.get(0).getNamespace();
-    MongoSinkTopicConfig config = batch.get(0).getConfig();
     try {
       LOGGER.debug(
           "Bulk writing {} document(s) into collection [{}]",
@@ -215,7 +238,7 @@ public class MongoSinkTask extends SinkTask {
           "Writing {} document(s) into collection [{}] failed.",
           writeModels.size(),
           namespace.getFullName());
-      handleMongoException(config, e);
+      handleMongoException(config, writeModels, e);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new DataException("Rate limiting was interrupted", e);
@@ -258,14 +281,19 @@ public class MongoSinkTask extends SinkTask {
     return remainingRetriesTopicMap.get(topic);
   }
 
-  private void handleMongoException(final MongoSinkTopicConfig config, final MongoException e) {
+  private void handleMongoException(
+      final MongoSinkTopicConfig config,
+      final List<WriteModel<BsonDocument>> writeModels,
+      final MongoException e) {
     if (getRemainingRetriesForTopic(config.getTopic()).decrementAndGet() <= 0) {
       if (config.logErrors()) {
         LOGGER.error("Error on mongodb operation", e);
         if (e instanceof MongoBulkWriteException) {
           LOGGER.error("Mongodb bulk write (partially) failed", e);
           LOGGER.error("WriteResult: {}", ((MongoBulkWriteException) e).getWriteResult());
-          LOGGER.error("WriteErrors: {}", ((MongoBulkWriteException) e).getWriteErrors());
+          LOGGER.error(
+              "WriteErrors: {}",
+              generateWriteErrors(((MongoBulkWriteException) e).getWriteErrors(), writeModels));
           LOGGER.error(
               "WriteConcernError: {}", ((MongoBulkWriteException) e).getWriteConcernError());
         }
@@ -279,5 +307,30 @@ public class MongoSinkTask extends SinkTask {
       context.timeout(deferRetryMs);
       throw new RetriableException(e.getMessage(), e);
     }
+  }
+
+  private String generateWriteErrors(
+      final List<BulkWriteError> bulkWriteErrorList,
+      final List<WriteModel<BsonDocument>> writeModels) {
+    List<String> errorString = new ArrayList<>();
+    for (final BulkWriteError bulkWriteError : bulkWriteErrorList) {
+      if (bulkWriteError.getIndex() < writeModels.size()) {
+        errorString.add(
+            "BulkWriteError{"
+                + "writeModel="
+                + writeModels.get(bulkWriteError.getIndex())
+                + ", code="
+                + bulkWriteError.getCode()
+                + ", message='"
+                + bulkWriteError.getMessage()
+                + '\''
+                + ", details="
+                + bulkWriteError.getDetails()
+                + '}');
+      } else {
+        errorString.add(bulkWriteError.toString());
+      }
+    }
+    return "[" + String.join(", ", errorString) + "]";
   }
 }

@@ -19,6 +19,7 @@
 package com.mongodb.kafka.connect.sink;
 
 import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.TOPIC_OVERRIDE_PREFIX;
+import static com.mongodb.kafka.connect.util.ServerApiConfig.addServerApiConfig;
 import static com.mongodb.kafka.connect.util.Validators.errorCheckingValueValidator;
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
@@ -48,10 +49,11 @@ import com.mongodb.kafka.connect.util.Validators;
 
 public class MongoSinkConfig extends AbstractConfig {
 
+  private static final String EMPTY_STRING = "";
   public static final String TOPICS_CONFIG = MongoSinkConnector.TOPICS_CONFIG;
   private static final String TOPICS_DOC =
       "A list of kafka topics for the sink connector, separated by commas";
-  public static final String TOPICS_DEFAULT = "";
+  public static final String TOPICS_DEFAULT = EMPTY_STRING;
   private static final String TOPICS_DISPLAY = "The Kafka topics";
 
   public static final String TOPICS_REGEX_CONFIG = "topics.regex";
@@ -63,7 +65,7 @@ public class MongoSinkConfig extends AbstractConfig {
           + " or "
           + TOPICS_REGEX_CONFIG
           + " should be specified.";
-  public static final String TOPICS_REGEX_DEFAULT = "";
+  public static final String TOPICS_REGEX_DEFAULT = EMPTY_STRING;
   private static final String TOPICS_REGEX_DISPLAY = "Topics regex";
 
   public static final String CONNECTION_URI_CONFIG = "connection.uri";
@@ -74,7 +76,7 @@ public class MongoSinkConfig extends AbstractConfig {
           + "eg: ``mongodb://user@pass@locahost/``.";
 
   public static final String TOPIC_OVERRIDE_CONFIG = "topic.override.%s.%s";
-  private static final String TOPIC_OVERRIDE_DEFAULT = "";
+  private static final String TOPIC_OVERRIDE_DEFAULT = EMPTY_STRING;
   private static final String TOPIC_OVERRIDE_DISPLAY = "Per topic configuration overrides.";
   public static final String TOPIC_OVERRIDE_DOC =
       "The overrides configuration allows for per topic customization of configuration. "
@@ -162,6 +164,10 @@ public class MongoSinkConfig extends AbstractConfig {
 
   public Optional<Pattern> getTopicRegex() {
     return topicsRegex;
+  }
+
+  public Map<String, String> getOriginals() {
+    return originals;
   }
 
   public MongoSinkTopicConfig getMongoSinkTopicConfig(final String topic) {
@@ -270,6 +276,8 @@ public class MongoSinkConfig extends AbstractConfig {
         ++orderInGroup,
         Width.MEDIUM,
         CONNECTION_URI_DISPLAY);
+
+    addServerApiConfig(configDef);
 
     group = "Overrides";
     orderInGroup = 0;

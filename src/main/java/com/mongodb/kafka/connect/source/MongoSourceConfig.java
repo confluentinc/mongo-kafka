@@ -22,6 +22,7 @@ import static com.mongodb.kafka.connect.util.ClassHelper.createInstance;
 import static com.mongodb.kafka.connect.util.ConfigHelper.collationFromJson;
 import static com.mongodb.kafka.connect.util.ConfigHelper.fullDocumentFromString;
 import static com.mongodb.kafka.connect.util.ConfigHelper.jsonArrayFromString;
+import static com.mongodb.kafka.connect.util.ServerApiConfig.addServerApiConfig;
 import static com.mongodb.kafka.connect.util.Validators.emptyString;
 import static com.mongodb.kafka.connect.util.Validators.errorCheckingValueValidator;
 import static java.lang.String.format;
@@ -59,6 +60,7 @@ import com.mongodb.kafka.connect.util.Validators;
 
 public class MongoSourceConfig extends AbstractConfig {
 
+  private static final String EMPTY_STRING = "";
   private static final Pattern CLASS_NAME =
       Pattern.compile("\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*");
   private static final Pattern FULLY_QUALIFIED_CLASS_NAME =
@@ -142,14 +144,14 @@ public class MongoSourceConfig extends AbstractConfig {
       "Prefix to prepend to database & collection names to generate the name of the Kafka "
           + "topic to publish data to. Used by the 'DefaultTopicMapper'.";
   private static final String TOPIC_PREFIX_DISPLAY = "Topic Prefix";
-  private static final String TOPIC_PREFIX_DEFAULT = "";
+  private static final String TOPIC_PREFIX_DEFAULT = EMPTY_STRING;
 
   public static final String TOPIC_SUFFIX_CONFIG = "topic.suffix";
   private static final String TOPIC_SUFFIX_DOC =
       "Suffix to append to database & collection names to generate the name of the Kafka "
           + "topic to publish data to. Used by the 'DefaultTopicMapper'.";
   private static final String TOPIC_SUFFIX_DISPLAY = "Topic Suffix";
-  private static final String TOPIC_SUFFIX_DEFAULT = "";
+  private static final String TOPIC_SUFFIX_DEFAULT = EMPTY_STRING;
 
   public static final String TOPIC_NAMESPACE_MAP_CONFIG = "topic.namespace.map";
   private static final String TOPIC_NAMESPACE_MAP_DISPLAY = "The namespace to topic map";
@@ -163,7 +165,7 @@ public class MongoSourceConfig extends AbstractConfig {
           + "will map all change stream documents to the `everyThingTopic` apart from the `db.coll` "
           + "messages."
           + "Note: Any prefix and suffix configuration will still apply.";
-  private static final String TOPIC_NAMESPACE_MAP_DEFAULT = "";
+  private static final String TOPIC_NAMESPACE_MAP_DEFAULT = EMPTY_STRING;
 
   public static final String PIPELINE_CONFIG = "pipeline";
   private static final String PIPELINE_DISPLAY = "The pipeline to apply to the change stream";
@@ -192,14 +194,14 @@ public class MongoSourceConfig extends AbstractConfig {
           + "When set to 'updateLookup', the change stream for partial updates will include both a delta "
           + "describing the changes to the document as well as a copy of the entire document that was changed from *some time* after "
           + "the change occurred.";
-  private static final String FULL_DOCUMENT_DEFAULT = "";
+  private static final String FULL_DOCUMENT_DEFAULT = EMPTY_STRING;
 
   public static final String COLLATION_CONFIG = "collation";
   private static final String COLLATION_DISPLAY = "The collation options";
   private static final String COLLATION_DOC =
       "The json representation of the Collation options to use for the change stream.\n"
           + "Use the `Collation.asDocument().toJson()` to create the specific json representation.";
-  private static final String COLLATION_DEFAULT = "";
+  private static final String COLLATION_DEFAULT = EMPTY_STRING;
 
   public static final String POLL_MAX_BATCH_SIZE_CONFIG = "poll.max.batch.size";
   private static final String POLL_MAX_BATCH_SIZE_DISPLAY = "The maximum batch size";
@@ -218,14 +220,14 @@ public class MongoSourceConfig extends AbstractConfig {
   private static final String DATABASE_DISPLAY = "The database to watch.";
   private static final String DATABASE_DOC =
       "The database to watch. If not set then all databases will be watched.";
-  private static final String DATABASE_DEFAULT = "";
+  private static final String DATABASE_DEFAULT = EMPTY_STRING;
 
   public static final String COLLECTION_CONFIG = "collection";
   private static final String COLLECTION_DISPLAY = "The collection to watch.";
   private static final String COLLECTION_DOC =
       "The collection in the database to watch. If not set then all collections will be "
           + "watched.";
-  private static final String COLLECTION_DEFAULT = "";
+  private static final String COLLECTION_DEFAULT = EMPTY_STRING;
 
   public static final String COPY_EXISTING_CONFIG = "copy.existing";
   private static final String COPY_EXISTING_DISPLAY = "Copy existing data";
@@ -260,7 +262,7 @@ public class MongoSourceConfig extends AbstractConfig {
           + "This can improve the use of indexes by the copying manager and make copying more efficient.\n"
           + "Use if there is any filtering of collection data in the `pipeline` configuration to speed up the copying process.\n"
           + "Example: `[{\"$match\": {\"closed\": \"false\"}}]`";
-  private static final String COPY_EXISTING_PIPELINE_DEFAULT = "";
+  private static final String COPY_EXISTING_PIPELINE_DEFAULT = EMPTY_STRING;
 
   public static final String COPY_EXISTING_NAMESPACE_REGEX_CONFIG = "copy.existing.namespace.regex";
   private static final String COPY_EXISTING_NAMESPACE_REGEX_DISPLAY =
@@ -270,7 +272,7 @@ public class MongoSourceConfig extends AbstractConfig {
           + " A namespace is the database name and collection separated by a period e.g. `database.collection`.\n"
           + " Example: The following regular expression will only include collections starting with `a` "
           + "in the `demo` database: `demo\\.a.*`";
-  private static final String COPY_EXISTING_NAMESPACE_REGEX_DEFAULT = "";
+  private static final String COPY_EXISTING_NAMESPACE_REGEX_DEFAULT = EMPTY_STRING;
 
   public static final String ERRORS_TOLERANCE_CONFIG = "errors.tolerance";
   public static final String ERRORS_TOLERANCE_DISPLAY = "Error Tolerance";
@@ -280,6 +282,10 @@ public class MongoSourceConfig extends AbstractConfig {
           + "and signals that any error will result in an immediate connector task failure; 'all' "
           + "changes the behavior to skip over problematic records.";
 
+  public static final String OVERRIDE_ERRORS_TOLERANCE_CONFIG = "mongo.errors.tolerance";
+  public static final String OVERRIDE_ERRORS_TOLERANCE_DOC =
+      "Use this property if you would like to configure the connector's error handling behavior differently from the Connect framework's.";
+
   public static final String ERRORS_LOG_ENABLE_CONFIG = "errors.log.enable";
   public static final String ERRORS_LOG_ENABLE_DISPLAY = "Log Errors";
   public static final boolean ERRORS_LOG_ENABLE_DEFAULT = false;
@@ -287,16 +293,25 @@ public class MongoSourceConfig extends AbstractConfig {
       "If true, write each error and the details of the failed operation and problematic record "
           + "to the Connect application log. This is 'false' by default, so that only errors that are not tolerated are reported.";
 
+  public static final String OVERRIDE_ERRORS_LOG_ENABLE_CONFIG = "mongo.errors.log.enable";
+  public static final String OVERRIDE_ERRORS_LOG_ENABLE_DOC =
+      "Use this property if you would like to configure the connector's error handling behavior differently from the Connect framework's.";
+
   public static final String ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG =
       "errors.deadletterqueue.topic.name";
   public static final String ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DISPLAY =
       "Output errors to the dead letter queue";
-  public static final String ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DEFAULT = "";
+  public static final String ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DEFAULT = EMPTY_STRING;
   public static final String ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC =
       "Whether to output conversion errors to the dead letter queue. "
           + "Stops poison messages when using schemas, any message will be outputted as extended json on the specified topic. "
           + "By default messages are not outputted to the dead letter queue. "
           + "Also requires `errors.tolerance=all`.";
+
+  public static final String OVERRIDE_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG =
+      "mongo.errors.deadletterqueue.topic.name";
+  public static final String LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC =
+      "Use this property if you would like to configure the connector's error handling behavior differently from the Connect framework's.";
 
   public static final String HEARTBEAT_INTERVAL_MS_CONFIG = "heartbeat.interval.ms";
   private static final String HEARTBEAT_INTERVAL_MS_DISPLAY = "Heartbeat interval";
@@ -317,7 +332,7 @@ public class MongoSourceConfig extends AbstractConfig {
 
   public static final String OFFSET_PARTITION_NAME_CONFIG = "offset.partition.name";
   public static final String OFFSET_PARTITION_NAME_DISPLAY = "Offset partition name";
-  public static final String OFFSET_PARTITION_NAME_DEFAULT = "";
+  public static final String OFFSET_PARTITION_NAME_DEFAULT = EMPTY_STRING;
   public static final String OFFSET_PARTITION_NAME_DOC =
       "Use a custom offset partition name. If blank the default partition name based on the "
           + "connection details will be used.";
@@ -424,13 +439,32 @@ public class MongoSourceConfig extends AbstractConfig {
         .getJsonWriterSettings();
   }
 
-  public boolean logErrors() {
-    return !tolerateErrors() || getBoolean(ERRORS_LOG_ENABLE_CONFIG);
+  @SuppressWarnings("deprecated")
+  public boolean tolerateErrors() {
+    String errorsTolerance =
+        ConfigHelper.getOverrideOrFallback(
+            this,
+            AbstractConfig::getString,
+            OVERRIDE_ERRORS_TOLERANCE_CONFIG,
+            ERRORS_TOLERANCE_CONFIG);
+    return ErrorTolerance.valueOf(errorsTolerance.toUpperCase()).equals(ErrorTolerance.ALL);
   }
 
-  public boolean tolerateErrors() {
-    return ErrorTolerance.valueOf(getString(ERRORS_TOLERANCE_CONFIG).toUpperCase())
-        .equals(ErrorTolerance.ALL);
+  public boolean logErrors() {
+    return !tolerateErrors()
+        || ConfigHelper.getOverrideOrFallback(
+            this,
+            AbstractConfig::getBoolean,
+            OVERRIDE_ERRORS_LOG_ENABLE_CONFIG,
+            ERRORS_LOG_ENABLE_CONFIG);
+  }
+
+  public String getDlqTopic() {
+    return ConfigHelper.getOverrideOrFallback(
+        this,
+        AbstractConfig::getString,
+        OVERRIDE_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG,
+        ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG);
   }
 
   private <T extends Configurable> T configureInstance(final T instance) {
@@ -466,7 +500,8 @@ public class MongoSourceConfig extends AbstractConfig {
             return results;
           }
         };
-    String group = "ChangeStream";
+
+    String group = "Connection";
     int orderInGroup = 0;
     configDef.define(
         CONNECTION_URI_CONFIG,
@@ -502,6 +537,10 @@ public class MongoSourceConfig extends AbstractConfig {
         Width.MEDIUM,
         COLLECTION_DISPLAY);
 
+    addServerApiConfig(configDef);
+
+    group = "Change stream";
+    orderInGroup = 0;
     configDef.define(
         PIPELINE_CONFIG,
         Type.STRING,
@@ -792,6 +831,17 @@ public class MongoSourceConfig extends AbstractConfig {
         ++orderInGroup,
         Width.SHORT,
         ERRORS_TOLERANCE_DISPLAY);
+    configDef.define(
+        OVERRIDE_ERRORS_TOLERANCE_CONFIG,
+        Type.STRING,
+        ERRORS_TOLERANCE_DEFAULT.value(),
+        Validators.EnumValidatorAndRecommender.in(ErrorTolerance.values()),
+        Importance.MEDIUM,
+        OVERRIDE_ERRORS_TOLERANCE_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        ERRORS_TOLERANCE_DISPLAY);
 
     configDef.define(
         ERRORS_LOG_ENABLE_CONFIG,
@@ -803,6 +853,16 @@ public class MongoSourceConfig extends AbstractConfig {
         ++orderInGroup,
         Width.SHORT,
         ERRORS_LOG_ENABLE_DISPLAY);
+    configDef.define(
+        OVERRIDE_ERRORS_LOG_ENABLE_CONFIG,
+        Type.BOOLEAN,
+        ERRORS_LOG_ENABLE_DEFAULT,
+        Importance.MEDIUM,
+        OVERRIDE_ERRORS_LOG_ENABLE_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        ERRORS_LOG_ENABLE_DISPLAY);
 
     configDef.define(
         ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG,
@@ -810,6 +870,16 @@ public class MongoSourceConfig extends AbstractConfig {
         ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DEFAULT,
         Importance.MEDIUM,
         ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DISPLAY);
+    configDef.define(
+        OVERRIDE_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_CONFIG,
+        Type.STRING,
+        ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DEFAULT,
+        Importance.MEDIUM,
+        LEGACY_ERRORS_DEAD_LETTER_QUEUE_TOPIC_NAME_DOC,
         group,
         ++orderInGroup,
         Width.SHORT,

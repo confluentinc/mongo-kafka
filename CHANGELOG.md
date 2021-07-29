@@ -2,6 +2,23 @@
 
 ## Changelog
 
+## 1.6.0
+
+### Improvements
+  - [KAFKA-237](https://jira.mongodb.org/browse/KAFKA-237) Improved error logging for bulk write exceptions.
+  - [KAFKA-181](https://jira.mongodb.org/browse/KAFKA-181) Added support for serverApi.
+  - [KAFKA-228](https://jira.mongodb.org/browse/KAFKA-228) Added support for automatic timeseries collection creation for 5.0
+  - [KAFKA-215](https://jira.mongodb.org/browse/KAFKA-215) Added mongo specific override options for error handling properties
+  - [KAFKA-222](https://jira.mongodb.org/browse/KAFKA-222) Added a new jar `mongo-kafka-connect-<version>-confluent.jar` which just contains
+    the dependencies needed for running the connector with confluent. `mongo-kafka-connect-<version>-all.jar` now also includes `Avro`
+    dependencies for ease of deployment for alternative Kafka connect runtimes.
+
+### Bug Fixes
+  - [KAFKA-218](https://jira.mongodb.org/browse/KAFKA-218) Fixed bug in LazyBsonDocument#clone ignoring any changes made once unwrapped.
+  - [KAFKA-220](https://jira.mongodb.org/browse/KAFKA-220) Fixed bug with timestamp integer overflow.
+  - [KAFKA-219](https://jira.mongodb.org/browse/KAFKA-219) Fixed Source Connector unable to recover from broken change stream due to event > 16MB
+  - [KAFKA-230](https://jira.mongodb.org/browse/KAFKA-230) Fixed Source Connector recovery during getMore call
+
 ## 1.5.1
 
 ### Bug Fixes

@@ -18,9 +18,13 @@
 
 package com.mongodb.kafka.connect;
 
-import static com.mongodb.kafka.connect.util.ConnectionValidator.getConfigByName;
+import static com.mongodb.kafka.connect.sink.MongoSinkConfig.CONNECTION_URI_CONFIG;
+import static com.mongodb.kafka.connect.util.ConfigHelper.getConfigByName;
 import static com.mongodb.kafka.connect.util.ConnectionValidator.validateCanConnect;
 import static com.mongodb.kafka.connect.util.ConnectionValidator.validateUserHasActions;
+import static com.mongodb.kafka.connect.util.ServerApiConfig.validateServerApi;
+import static com.mongodb.kafka.connect.util.TimeseriesValidation.validTopicRegexConfigAndCollection;
+import static com.mongodb.kafka.connect.util.TimeseriesValidation.validateConfigAndCollection;
 import static java.util.Arrays.asList;
 
 import java.util.ArrayList;
@@ -38,6 +42,8 @@ import com.mongodb.kafka.connect.sink.MongoSinkTopicConfig;
 
 public class MongoSinkConnector extends SinkConnector {
   private static final List<String> REQUIRED_SINK_ACTIONS = asList("insert", "update", "remove");
+  private static final List<String> REQUIRED_COLLSTATS_SINK_ACTIONS =
+      asList("insert", "update", "remove", "collStats");
   private Map<String, String> settings;
 
   @Override
@@ -83,10 +89,11 @@ public class MongoSinkConnector extends SinkConnector {
       return config;
     }
 
-    validateCanConnect(config, MongoSinkConfig.CONNECTION_URI_CONFIG)
+    validateCanConnect(config, CONNECTION_URI_CONFIG)
         .ifPresent(
             client -> {
               try {
+                validateServerApi(client, config);
                 sinkConfig
                     .getTopics()
                     .ifPresent(
@@ -98,13 +105,16 @@ public class MongoSinkConnector extends SinkConnector {
                                   validateUserHasActions(
                                       client,
                                       sinkConfig.getConnectionString().getCredential(),
-                                      REQUIRED_SINK_ACTIONS,
+                                      mongoSinkTopicConfig.isTimeseries()
+                                          ? REQUIRED_COLLSTATS_SINK_ACTIONS
+                                          : REQUIRED_SINK_ACTIONS,
                                       mongoSinkTopicConfig.getString(
                                           MongoSinkTopicConfig.DATABASE_CONFIG),
                                       mongoSinkTopicConfig.getString(
                                           MongoSinkTopicConfig.COLLECTION_CONFIG),
-                                      MongoSinkConfig.CONNECTION_URI_CONFIG,
+                                      CONNECTION_URI_CONFIG,
                                       config);
+                                  validateConfigAndCollection(client, mongoSinkTopicConfig, config);
                                 }));
                 sinkConfig
                     .getTopicRegex()
@@ -120,8 +130,9 @@ public class MongoSinkConnector extends SinkConnector {
                               getConfigByName(config, MongoSinkTopicConfig.COLLECTION_CONFIG)
                                   .map(c -> (String) c.value())
                                   .orElse(""),
-                              MongoSinkConfig.CONNECTION_URI_CONFIG,
+                              CONNECTION_URI_CONFIG,
                               config);
+                          validTopicRegexConfigAndCollection(client, sinkConfig, config);
                         });
               } catch (Exception e) {
                 // Ignore

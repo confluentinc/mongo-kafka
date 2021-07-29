@@ -15,6 +15,7 @@
  */
 package com.mongodb.kafka.connect.util;
 
+import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
 
@@ -55,7 +56,7 @@ public final class ConnectionValidator {
   public static Optional<MongoClient> validateCanConnect(
       final Config config, final String connectionStringConfigName) {
     Optional<ConfigValue> optionalConnectionString =
-        getConfigByName(config, connectionStringConfigName);
+        ConfigHelper.getConfigByName(config, connectionStringConfigName);
     if (optionalConnectionString.isPresent()
         && optionalConnectionString.get().errorMessages().isEmpty()) {
       ConfigValue configValue = optionalConnectionString.get();
@@ -63,9 +64,12 @@ public final class ConnectionValidator {
       AtomicBoolean connected = new AtomicBoolean();
       CountDownLatch latch = new CountDownLatch(1);
       ConnectionString connectionString = new ConnectionString((String) configValue.value());
+      MongoClientSettings.Builder mongoClientSettingsBuilder =
+          MongoClientSettings.builder().applyConnectionString(connectionString);
+      setServerApi(mongoClientSettingsBuilder, config);
+
       MongoClientSettings mongoClientSettings =
-          MongoClientSettings.builder()
-              .applyConnectionString(connectionString)
+          mongoClientSettingsBuilder
               .applyToClusterSettings(
                   b ->
                       b.addClusterListener(
@@ -169,7 +173,7 @@ public final class ConnectionValidator {
       }
 
       String missingPermissions = String.join(", ", unsupportedActions);
-      getConfigByName(config, configName)
+      ConfigHelper.getConfigByName(config, configName)
           .ifPresent(
               c ->
                   c.addErrorMessage(
@@ -177,7 +181,7 @@ public final class ConnectionValidator {
                           "Invalid user permissions. Missing the following action permissions: %s",
                           missingPermissions)));
     } catch (MongoSecurityException e) {
-      getConfigByName(config, configName)
+      ConfigHelper.getConfigByName(config, configName)
           .ifPresent(c -> c.addErrorMessage("Invalid user permissions authentication failed."));
     } catch (Exception e) {
       LOGGER.warn("Permission validation failed due to: {}", e.getMessage(), e);
@@ -232,15 +236,6 @@ public final class ConnectionValidator {
     }
 
     return unsupportedUserActions;
-  }
-
-  public static Optional<ConfigValue> getConfigByName(final Config config, final String name) {
-    for (final ConfigValue configValue : config.configValues()) {
-      if (configValue.name().equals(name)) {
-        return Optional.of(configValue);
-      }
-    }
-    return Optional.empty();
   }
 
   private ConnectionValidator() {}
