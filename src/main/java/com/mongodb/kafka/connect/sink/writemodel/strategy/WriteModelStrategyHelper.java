@@ -56,7 +56,7 @@ public final class WriteModelStrategyHelper {
       return config
           .getDeleteOneWriteModelStrategy()
           .map(s -> s.createWriteModel(sinkDocument))
-          .orElseThrow(() -> new DataException("Could not create write model"));
+          .orElse(null);
     } catch (Exception e) {
       throw new DataException("Could not create write model", e);
     }
