@@ -16,11 +16,15 @@
 package com.mongodb.kafka.connect.util;
 
 import static com.mongodb.kafka.connect.util.FlexibleDateTimeParser.DEFAULT_DATE_TIME_FORMATTER_PATTERN;
+import static com.mongodb.kafka.connect.util.FlexibleDateTimeParser.getLocaleFromString;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.text.DateFormat;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
+import java.util.Locale;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -120,5 +124,18 @@ public class FlexibleDateTimeParserTest {
         3600000,
         new FlexibleDateTimeParser("EEEE, MMM dd, yyyy HH:mm:ss", "en")
             .toEpochMilli("Thursday, Jan 01, 1970 01:00:00"));
+  }
+
+  @Test
+  @DisplayName("String to locale mappings")
+  void testStringToLocaleMappings() {
+    Locale[] localArr = DateFormat.getAvailableLocales();
+    Locale[] genArr =
+        Arrays.stream(localArr).map(l -> getLocaleFromString(l.toString())).toArray(Locale[]::new);
+    for (int i = 0; i < localArr.length; i++) {
+      assertEquals(localArr[i].toString(), genArr[i].toString());
+      assertEquals(localArr[i].getCountry(), genArr[i].getCountry());
+      assertEquals(localArr[i].getLanguage(), genArr[i].getLanguage());
+    }
   }
 }

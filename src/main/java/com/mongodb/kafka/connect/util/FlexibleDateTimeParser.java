@@ -47,7 +47,7 @@ public class FlexibleDateTimeParser {
   private final DateTimeFormatter formatter;
 
   public FlexibleDateTimeParser(final String dateTimePattern, final String languageTag) {
-    Locale locale = languageTag.isEmpty() ? Locale.ROOT : Locale.forLanguageTag(languageTag);
+    Locale locale = languageTag.isEmpty() ? Locale.ROOT : getLocaleFromString(languageTag);
     this.formatter = DateTimeFormatter.ofPattern(dateTimePattern, locale);
   }
 
@@ -61,5 +61,28 @@ public class FlexibleDateTimeParser {
       return LocalDate.from(parsed).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli();
     }
     throw new DateTimeParseException("Unsupported date time string", dateTimeString, 0);
+  }
+
+  public static Locale getLocaleFromString(String localeTag) {
+    if (!localeTag.contains("_")) {
+      // IETF BCP 14 tag
+      return Locale.forLanguageTag(localeTag);
+    }
+
+    int languageIndex = localeTag.indexOf('_');
+    String language = localeTag.substring(0, languageIndex);
+
+    int countryIndex = localeTag.indexOf('_', languageIndex + 1);
+    String country = null;
+    if (countryIndex == -1) {
+      // no more '_'. So we have lang_COUNTRY.
+      country = localeTag.substring(languageIndex + 1);
+      return new Locale(language, country);
+    } else {
+      // More '_'. So we have lang_COUNTRY_variant
+      country = localeTag.substring(languageIndex + 1, countryIndex);
+      String variant = localeTag.substring(countryIndex + 1);
+      return new Locale(language, country, variant);
+    }
   }
 }
