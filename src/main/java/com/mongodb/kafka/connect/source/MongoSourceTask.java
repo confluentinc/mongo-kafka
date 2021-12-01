@@ -634,6 +634,10 @@ public final class MongoSourceTask extends SourceTask {
           } else {
             LOGGER.info(
                 "An exception occurred when trying to get the next item from the Change Stream", e);
+            if (e instanceof MongoCommandException &&
+                ((MongoCommandException) e).getErrorCode() == 286) {
+              throw new ConnectException("Failed to resume change stream", e);
+            }
           }
         }
         return Optional.empty();
