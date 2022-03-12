@@ -67,6 +67,7 @@ import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
 import com.mongodb.MongoException;
+import com.mongodb.MongoQueryException;
 import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.MongoChangeStreamCursor;
 import com.mongodb.client.MongoClient;
@@ -632,8 +633,12 @@ public final class MongoSourceTask extends SourceTask {
           if (sourceConfig.tolerateErrors() && changeStreamNotValid(e)) {
             cursor = tryRecreateCursor(e);
           } else {
-            LOGGER.info(
+            LOGGER.error(
                 "An exception occurred when trying to get the next item from the Change Stream", e);
+            if (e instanceof MongoQueryException &&
+                ((MongoQueryException) e).getErrorCode() == 286) {
+              throw new ConnectException("Failed to resume change stream", e);
+            }
           }
         }
         return Optional.empty();
