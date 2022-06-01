@@ -32,37 +32,32 @@ plugins {
     `maven-publish`
     signing
     checkstyle
-    id("de.fuerstenau.buildconfig") version "1.1.8"
-    id("com.github.spotbugs") version "4.6.0"
-    id("com.diffplug.spotless") version "5.10.0"
+    id("com.github.gmazzo.buildconfig") version "3.0.3"
+    id("com.github.spotbugs") version "4.7.9"
+    id("com.diffplug.spotless") version "5.17.1"
     id("com.github.johnrengelman.shadow") version "6.1.0"
 }
 
 group = "org.mongodb.kafka"
-version = "1.7.0-SNAPSHOT"
+version = "1.8.0-SNAPSHOT"
 description = "The official MongoDB Apache Kafka Connect Connector."
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
-}
 
 repositories {
     mavenCentral()
-    maven("http://packages.confluent.io/maven/")
+    maven("https://packages.confluent.io/maven/")
     maven("https://jitpack.io")
 }
 
 extra.apply {
-    set("mongodbDriverVersion", "[4.3,4.3.99)")
+    set("mongodbDriverVersion", "[4.5,4.5.99)")
     set("kafkaVersion", "2.6.0")
     set("avroVersion", "1.9.2")
 
     // Testing dependencies
-    set("junitJupiterVersion", "5.4.0")
-    set("junitPlatformVersion", "1.4.0")
-    set("hamcrestVersion", "2.0.0.0")
-    set("mockitoVersion", "2.27.0")
+    set("junitJupiterVersion", "5.8.1")
+    set("junitPlatformVersion", "1.8.1")
+    set("hamcrestVersion", "2.2")
+    set("mockitoVersion", "4.0.0")
 
     // Integration test dependencies
     set("confluentVersion", "6.0.1")
@@ -85,9 +80,11 @@ dependencies {
     mongoAndAvroDependencies("org.apache.avro:avro:${project.extra["avroVersion"]}")
 
     // Unit Tests
-    testImplementation("org.junit.jupiter:junit-jupiter:${project.extra["junitJupiterVersion"]}")
-    testImplementation("org.junit.platform:junit-platform-runner:${project.extra["junitPlatformVersion"]}")
-    testImplementation("org.hamcrest:hamcrest-junit:${project.extra["hamcrestVersion"]}")
+    testImplementation(platform("org.junit:junit-bom:${project.extra["junitJupiterVersion"]}"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("org.junit.platform:junit-platform-runner")
+    testImplementation("org.apiguardian:apiguardian-api:1.1.2") // https://github.com/gradle/gradle/issues/18627
+    testImplementation("org.hamcrest:hamcrest:${project.extra["hamcrestVersion"]}")
     testImplementation("org.mockito:mockito-junit-jupiter:${project.extra["mockitoVersion"]}")
 
     // Integration Tests
@@ -108,6 +105,14 @@ dependencies {
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
+    options.release.set(8)
+}
+
+val defaultJdkVersion = 17
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(defaultJdkVersion))
+    }
 }
 
 /*
@@ -123,18 +128,19 @@ val gitVersion: String by lazy {
 }
 
 buildConfig {
-    appName = "mongo-kafka"
-    version = gitVersion
-    clsName = "Versions"
-    packageName = "com.mongodb.kafka.connect"
+    className("Versions")
+    packageName("com.mongodb.kafka.connect")
+    useJavaOutput()
+    buildConfigField("String", "NAME", "\"mongo-kafka\"")
+    buildConfigField("String", "VERSION", provider { "\"${gitVersion}\"" })
 }
 
 /*
  * Testing
  */
+
 sourceSets.create("integrationTest") {
     java.srcDir("src/integrationTest/java")
-    resources.srcDir("src/integrationTest/resources")
     compileClasspath += sourceSets["main"].output + configurations["testRuntimeClasspath"]
     runtimeClasspath += output + compileClasspath + sourceSets["test"].runtimeClasspath
 }
@@ -154,6 +160,12 @@ tasks.withType<Test> {
     testLogging {
         events("passed", "skipped", "failed")
     }
+
+    val javaVersion: Int = (project.findProperty("javaVersion") as String? ?: defaultJdkVersion.toString()).toInt()
+    logger.info("Running tests using JDK$javaVersion")
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(javaVersion))
+    })
 
     systemProperties(mapOf("org.mongodb.test.uri" to System.getProperty("org.mongodb.test.uri", "")))
 
@@ -210,7 +222,7 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
 // Spotless is used to lint and reformat source files.
 spotless {
     java {
-        googleJavaFormat()
+        googleJavaFormat("1.12.0")
         importOrder("java", "io", "org", "org.bson", "com.mongodb", "com.mongodb.kafka", "")
         removeUnusedImports() // removes any unused imports
         trimTrailingWhitespace()
@@ -333,6 +345,9 @@ publishing {
 }
 
 signing {
+    val signingKey: String? by project
+    val signingPassword: String? by project
+    useInMemoryPgpKeys(signingKey, signingPassword)
     sign(publishing.publications["mavenJava"])
 }
 
@@ -372,26 +387,6 @@ tasks.register("publishArchives") {
 
     if (gitVersion == version) {
         dependsOn(tasks.withType<PublishToMavenRepository>())
-    }
-}
-
-/*
-For security we allow the signing-related project properties to be passed in as environment variables, which
-Gradle enables if they are prefixed with "ORG_GRADLE_PROJECT_".  But since environment variables can not contain
-the '.' character and the signing-related properties contain '.', here we map signing-related project properties with '_'
-to ones with '.' that are expected by the signing plugin.
-*/
-gradle.taskGraph.whenReady {
-    if (allTasks.any { it is Sign }) {
-        val signing_keyId: String? by project
-        val signing_secretKeyRingFile: String? by project
-        val signing_password: String? by project
-
-        allprojects {
-            signing_keyId?.let { extra["signing.keyId"] = it }
-            signing_secretKeyRingFile?.let { extra["signing.secretKeyRingFile"] = it }
-            signing_password?.let { extra["signing.password"] = it }
-        }
     }
 }
 

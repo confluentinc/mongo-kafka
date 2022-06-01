@@ -19,6 +19,8 @@
 package com.mongodb.kafka.connect.sink;
 
 import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.TOPIC_OVERRIDE_PREFIX;
+import static com.mongodb.kafka.connect.sink.SinkConfigSoftValidator.logIncompatibleProperties;
+import static com.mongodb.kafka.connect.sink.SinkConfigSoftValidator.logObsoleteProperties;
 import static com.mongodb.kafka.connect.util.ServerApiConfig.addServerApiConfig;
 import static com.mongodb.kafka.connect.util.Validators.errorCheckingValueValidator;
 import static java.lang.String.format;
@@ -48,7 +50,6 @@ import com.mongodb.kafka.connect.MongoSinkConnector;
 import com.mongodb.kafka.connect.util.Validators;
 
 public class MongoSinkConfig extends AbstractConfig {
-
   private static final String EMPTY_STRING = "";
   public static final String TOPICS_CONFIG = MongoSinkConnector.TOPICS_CONFIG;
   private static final String TOPICS_DOC =
@@ -200,6 +201,8 @@ public class MongoSinkConfig extends AbstractConfig {
           @Override
           @SuppressWarnings("unchecked")
           public Map<String, ConfigValue> validateAll(final Map<String, String> props) {
+            logObsoleteProperties(props.keySet());
+            logIncompatibleProperties(props);
             Map<String, ConfigValue> results = super.validateAll(props);
             INVISIBLE_CONFIGS.forEach(
                 c -> {

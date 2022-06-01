@@ -47,7 +47,8 @@ function test_systems_available {
         MSG="\nWARNING: Could not reach configured kafka system on http://localhost:$1 \nNote: This script requires curl.\n"
 
           if [[ "$OSTYPE" == "darwin"* ]]; then
-            MSG+="\nIf using OSX please try reconfiguring Docker and increasing RAM and CPU. Then restart and try again.\n\n"
+            MSG+="\nIf using OSX please try reconfiguring Docker and increasing RAM and CPU.\
+                In Docker Desktop this can be done via the \"Resources\" tab in \"Preferences\". Then try again.\n\n"
           fi
 
         echo -e $MSG
@@ -124,6 +125,8 @@ curl -X POST -H "Content-Type: application/json" --data '
      "tasks.max":"1",
      "connector.class":"com.mongodb.kafka.connect.MongoSourceConnector",
      "connection.uri":"mongodb://mongo1:27017,mongo2:27017,mongo3:27017",
+     "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
      "topic.prefix":"mongo",
      "database":"test",
      "collection":"pageviews"

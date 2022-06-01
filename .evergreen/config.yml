@@ -93,7 +93,7 @@ functions:
             # If this was a patch build, doing a fresh clone would not actually test the patch
             cp -R ${PROJECT_DIRECTORY}/ $DRIVERS_TOOLS
           else
-            git clone git://github.com/mongodb-labs/drivers-evergreen-tools.git $DRIVERS_TOOLS
+            git clone https://github.com/mongodb-labs/drivers-evergreen-tools.git $DRIVERS_TOOLS
           fi
           echo "{ \"releases\": { \"default\": \"$MONGODB_BINARIES\" }}" > $MONGO_ORCHESTRATION_HOME/orchestration.config
 
@@ -273,7 +273,7 @@ functions:
         working_dir: "src"
         script: |
           ${PREPARE_SHELL}
-          JDK="${JDK}" .evergreen/run-unit-tests.sh
+          javaVersion="${javaVersion}" .evergreen/run-unit-tests.sh
 
   "run integration tests":
     - command: shell.exec
@@ -282,7 +282,7 @@ functions:
         working_dir: "src"
         script: |
           ${PREPARE_SHELL}
-          MONGODB_URI="${MONGODB_URI}" JDK="${JDK}" .evergreen/run-integration-tests.sh
+          MONGODB_URI="${MONGODB_URI}" javaVersion="${javaVersion}" .evergreen/run-integration-tests.sh
 
   "publish snapshots":
     - command: shell.exec
@@ -292,8 +292,16 @@ functions:
         working_dir: "src"
         script: |
           # DO NOT ECHO WITH XTRACE (which PREPARE_SHELL does)
-          PROJECT_DIRECTORY=${PROJECT_DIRECTORY} NEXUS_USERNAME=${nexus_username} NEXUS_PASSWORD=${nexus_password} SIGNING_PASSWORD=${signing_password} SIGNING_KEY_ID=${signing_key_id} RING_FILE_GPG_BASE64=${ring_file_gpg_base64} .evergreen/publish-snapshots.sh
+          RELEASE=false PROJECT_DIRECTORY=${PROJECT_DIRECTORY} NEXUS_USERNAME=${nexus_username} NEXUS_PASSWORD=${nexus_password} SIGNING_PASSWORD=${signing_password} SIGNING_KEY="${gpg_ascii_armored}" .evergreen/publish.sh
 
+  "publish release":
+    - command: shell.exec
+      type: test
+      params:
+        working_dir: "src"
+        script: |
+          # DO NOT ECHO WITH XTRACE (which PREPARE_SHELL does)
+          RELEASE=true PROJECT_DIRECTORY=${PROJECT_DIRECTORY} NEXUS_USERNAME=${nexus_username} NEXUS_PASSWORD=${nexus_password} SIGNING_PASSWORD=${signing_password} SIGNING_KEY="${gpg_ascii_armored}" .evergreen/publish.sh
 
 pre:
   - func: "fetch source"
@@ -334,6 +342,11 @@ tasks:
         name: "integration-test-task"
     commands:
       - func: "publish snapshots"
+
+  - name: "publish-release-task"
+    git_tag_only: true
+    commands:
+      - func: "publish release"
 
 axes:
   - id: "version"
@@ -378,13 +391,17 @@ axes:
         variables:
           TOPOLOGY: "replica_set"
 
-  - id: "jdk"
-    display_name: "JDK"
+  - id: "javaVersion"
+    display_name: "javaVersion"
     values:
-      - id: "jdk8"
+      - id: "JDK17"
+        display_name: "JDK17"
+        variables:
+          JAVA_VERSION: "17"
+      - id: "JDK8"
         display_name: "JDK8"
         variables:
-          JDK: "jdk8"
+          JAVA_VERSION: "8"
 
 buildvariants:
 
@@ -397,8 +414,8 @@ buildvariants:
       - name: "static-checks-task"
 
   - matrix_name: "Unit-tests"
-    matrix_spec: { jdk: "*", os: "*" }
-    display_name: "Units tests: ${jdk}"
+    matrix_spec: { javaVersion: "*", os: "*" }
+    display_name: "Units tests: ${javaVersion}"
     tags: ["unit-test"]
     run_on:
       - "ubuntu1804-test"
@@ -406,8 +423,8 @@ buildvariants:
       - name: "unit-test-task"
 
   - matrix_name: "integration-tests"
-    matrix_spec: { jdk: "*", version: "*", topology: "*", os: "*" }
-    display_name: "Integration tests: ${jdk} ${version} ${topology} ${os}"
+    matrix_spec: { javaVersion: "*", version: "*", topology: "*", os: "*" }
+    display_name: "Integration tests: ${javaVersion} ${version} ${topology} ${os}"
     tags: ["integration-test"]
     run_on:
       - "ubuntu1804-test"
@@ -420,3 +437,10 @@ buildvariants:
       - "ubuntu1804-test"
     tasks:
       - name: "publish-snapshots-task"
+
+  - name: "publish-release"
+    display_name: "Publish Release"
+    run_on:
+      - "ubuntu1804-test"
+    tasks:
+      - name: "publish-release-task"

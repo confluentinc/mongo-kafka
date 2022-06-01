@@ -139,18 +139,25 @@ public class MongoSourceConfig extends AbstractConfig {
   private static final String TOPIC_MAPPER_DEFAULT =
       "com.mongodb.kafka.connect.source.topic.mapping.DefaultTopicMapper";
 
+  public static final String TOPIC_SEPARATOR_CONFIG = "topic.separator";
+  public static final String TOPIC_SEPARATOR_DEFAULT = ".";
+  private static final String TOPIC_SEPARATOR_DISPLAY = "The topic separator";
+  private static final String TOPIC_SEPARATOR_DOC =
+      "Separator to use when joining prefix, database & collection names, suffix to generate the name of the Kafka "
+          + "topic to publish data to. Used by the 'DefaultTopicMapper'.";
+
   public static final String TOPIC_PREFIX_CONFIG = "topic.prefix";
   private static final String TOPIC_PREFIX_DOC =
       "Prefix to prepend to database & collection names to generate the name of the Kafka "
           + "topic to publish data to. Used by the 'DefaultTopicMapper'.";
-  private static final String TOPIC_PREFIX_DISPLAY = "Topic Prefix";
+  private static final String TOPIC_PREFIX_DISPLAY = "The topic prefix";
   private static final String TOPIC_PREFIX_DEFAULT = EMPTY_STRING;
 
   public static final String TOPIC_SUFFIX_CONFIG = "topic.suffix";
   private static final String TOPIC_SUFFIX_DOC =
       "Suffix to append to database & collection names to generate the name of the Kafka "
           + "topic to publish data to. Used by the 'DefaultTopicMapper'.";
-  private static final String TOPIC_SUFFIX_DISPLAY = "Topic Suffix";
+  private static final String TOPIC_SUFFIX_DISPLAY = "The topic suffix";
   private static final String TOPIC_SUFFIX_DEFAULT = EMPTY_STRING;
 
   public static final String TOPIC_NAMESPACE_MAP_CONFIG = "topic.namespace.map";
@@ -273,6 +280,14 @@ public class MongoSourceConfig extends AbstractConfig {
           + " Example: The following regular expression will only include collections starting with `a` "
           + "in the `demo` database: `demo\\.a.*`";
   private static final String COPY_EXISTING_NAMESPACE_REGEX_DEFAULT = EMPTY_STRING;
+
+  public static final String COPY_EXISTING_ALLOW_DISK_USE_CONFIG = "copy.existing.allow.disk.use";
+  private static final String COPY_EXISTING_ALLOW_DISK_USE_DISPLAY =
+      "Copy existing allow disk use with the copying aggregation";
+  private static final String COPY_EXISTING_ALLOW_DISK_USE_DOC =
+      "Copy existing data uses an aggregation pipeline that mimics change stream events. In certain contexts this can require"
+          + "writing to disk if the aggregation process runs out of memory.";
+  public static final boolean COPY_EXISTING_ALLOW_DISK_USE_DEFAULT = true;
 
   public static final String ERRORS_TOLERANCE_CONFIG = "errors.tolerance";
   public static final String ERRORS_TOLERANCE_DISPLAY = "Error Tolerance";
@@ -644,6 +659,18 @@ public class MongoSourceConfig extends AbstractConfig {
         TOPIC_MAPPER_DISPLAY);
 
     configDef.define(
+        TOPIC_SEPARATOR_CONFIG,
+        Type.STRING,
+        TOPIC_SEPARATOR_DEFAULT,
+        null,
+        Importance.LOW,
+        TOPIC_SEPARATOR_DOC,
+        group,
+        ++orderInGroup,
+        Width.MEDIUM,
+        TOPIC_SEPARATOR_DISPLAY);
+
+    configDef.define(
         TOPIC_PREFIX_CONFIG,
         Type.STRING,
         TOPIC_PREFIX_DEFAULT,
@@ -816,6 +843,17 @@ public class MongoSourceConfig extends AbstractConfig {
         ++orderInGroup,
         Width.MEDIUM,
         COPY_EXISTING_NAMESPACE_REGEX_DISPLAY);
+
+    configDef.define(
+        COPY_EXISTING_ALLOW_DISK_USE_CONFIG,
+        Type.BOOLEAN,
+        COPY_EXISTING_ALLOW_DISK_USE_DEFAULT,
+        Importance.MEDIUM,
+        COPY_EXISTING_ALLOW_DISK_USE_DOC,
+        group,
+        ++orderInGroup,
+        Width.MEDIUM,
+        COPY_EXISTING_ALLOW_DISK_USE_DISPLAY);
 
     group = "Errors";
     orderInGroup = 0;
