@@ -108,7 +108,7 @@ tasks.withType<JavaCompile> {
     options.release.set(8)
 }
 
-val defaultJdkVersion = 17
+val defaultJdkVersion = 8
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(defaultJdkVersion))
