@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.kafka.common.config.Config;
 import org.apache.kafka.common.config.ConfigValue;
+import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,7 +69,8 @@ public final class ConnectionValidator {
 
       AtomicBoolean connected = new AtomicBoolean();
       CountDownLatch latch = new CountDownLatch(1);
-      ConnectionString connectionString = new ConnectionString((String) configValue.value());
+      ConnectionString connectionString =
+          new ConnectionString(((Password) configValue.value()).value());
       MongoClientSettings.Builder mongoClientSettingsBuilder =
           MongoClientSettings.builder().applyConnectionString(connectionString);
       setServerApi(mongoClientSettingsBuilder, config);
