@@ -83,8 +83,7 @@ public final class OperationHelper {
     }
 
     if (!operation.isString()) {
-      throw new DataException(
-          format("Error: Could not determine the CDC operation type. %s", valueDocument.toJson()));
+      throw new DataException("Error: Could not determine the CDC operation type.");
     }
 
     return OperationType.fromString(operation.asString().getValue());
@@ -106,10 +105,7 @@ public final class OperationHelper {
                   return getSubDocumentOrOriginal(DATA_BEFORE_FIELD, messageDocument);
                 });
     if (filter.isEmpty()) {
-      throw new DataException(
-          format(
-              "Error: Value Document does not contain the expected data, cannot create filter: %s.",
-              valueDocument.toJson()));
+      throw new DataException("Error: Value Document does not contain the expected data, cannot create filter.");
     }
     return filter;
   }
@@ -127,10 +123,7 @@ public final class OperationHelper {
                       getSubDocumentNotNullOrOriginal(DATA_FIELD, messageDocument));
                 });
     if (filter.isEmpty()) {
-      throw new DataException(
-          format(
-              "Error: Value Document does not contain the expected data, cannot create filter: %s.",
-              valueDocument.toJson()));
+      throw new DataException("Error: Value Document does not contain the expected data, cannot create filter.");
     }
     return filter;
   }
@@ -156,10 +149,7 @@ public final class OperationHelper {
     BsonDocument afterDocument = getSubDocumentOrOriginal(DATA_FIELD, messageDocument);
 
     if (afterDocument.isEmpty()) {
-      throw new DataException(
-          format(
-              "Error: Value Document does not contain the expected data, cannot create filter: %s.",
-              valueDocument.toJson()));
+      throw new DataException("Error: Value Document does not contain the expected data, cannot create filter.");
     }
 
     BsonDocument updates = new BsonDocument();
@@ -206,8 +196,8 @@ public final class OperationHelper {
       if (!fieldValue.isDocument()) {
         throw new DataException(
             format(
-                "Error: Value document contains a '%s' that is not a document: %s",
-                fieldName, original));
+                "Error: Value document contains a '%s' that is not a document",
+                fieldName));
       }
       return fieldValue.asDocument();
     }

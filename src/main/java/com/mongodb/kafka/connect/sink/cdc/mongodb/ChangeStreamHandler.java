@@ -66,8 +66,8 @@ public final class ChangeStreamHandler extends CdcHandler {
     if (!changeStreamDocument.containsKey(OPERATION_TYPE)) {
       throw new DataException(
           format(
-              "Error: `%s` field is doc is missing. %s",
-              OPERATION_TYPE, changeStreamDocument.toJson()));
+              "Error: `%s` field in doc is missing",
+              OPERATION_TYPE));
     } else if (!changeStreamDocument.get(OPERATION_TYPE).isString()) {
       throw new DataException("Error: Unexpected CDC operation type, should be a string");
     }
@@ -76,9 +76,6 @@ public final class ChangeStreamHandler extends CdcHandler {
         OperationType.fromString(changeStreamDocument.get(OPERATION_TYPE).asString().getValue());
 
     LOGGER.debug("Creating operation handler for: {}", operationType);
-    if (LOGGER.isTraceEnabled()) {
-      LOGGER.trace("ChangeStream document {}", changeStreamDocument.toJson());
-    }
 
     if (OPERATIONS.containsKey(operationType)) {
       return Optional.of(OPERATIONS.get(operationType).perform(doc));
