@@ -73,10 +73,7 @@ public class RdbmsHandler extends QlikCdcHandler {
         getCdcOperation(operationType)
             .orElseThrow(
                 () ->
-                    new DataException(
-                        format(
-                            "Unable to determine the CDC operation from: %s",
-                            valueDocument.toJson())));
+                    new DataException("Unable to determine the CDC operation"));
 
     return Optional.ofNullable(cdcOperation.perform(new SinkDocument(keyDocument, valueDocument)));
   }

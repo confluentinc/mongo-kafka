@@ -141,14 +141,14 @@ public class FieldPathNamespaceMapper implements NamespaceMapper {
             optionalFieldValue.orElseThrow(
                 () ->
                     new DataException(
-                        format("Missing document path '%s': %s", path, data.toJson())));
+                        format("Missing document path '%s'", path)));
 
         if (continueProcessing(fieldValue.isString())) {
           if (!fieldValue.isString()) {
             throw new DataException(
                 format(
-                    "Invalid type for %s field path '%s', expected a String: %s",
-                    fieldValue.getBsonType(), path, data.toJson()));
+                    "Invalid type for %s field path '%s', expected a String",
+                    fieldValue.getBsonType(), path));
           }
 
           return fieldValue.asString().getValue();

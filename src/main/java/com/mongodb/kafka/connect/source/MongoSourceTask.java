@@ -257,8 +257,7 @@ public final class MongoSourceTask extends SourceTask {
 
         String topicName = topicMapper.getTopic(changeStreamDocument);
         if (topicName.isEmpty()) {
-          LOGGER.warn(
-              "No topic set. Could not publish the message: {}", changeStreamDocument.toJson());
+          LOGGER.warn("No topic set. Could not publish the message.");
           return sourceRecords;
         }
 
@@ -331,10 +330,7 @@ public final class MongoSourceTask extends SourceTask {
               valueSchemaAndValue.value()));
     } catch (Exception e) {
       Supplier<String> errorMessage =
-          () ->
-              format(
-                  "Exception creating Source record for: Key=%s Value=%s",
-                  keyDocument.toJson(), valueDocument.toJson());
+          () -> "Exception creating Source record";
       if (sourceConfig.logErrors()) {
         LOGGER.error(errorMessage.get(), e);
       }
