@@ -133,7 +133,9 @@ public class FieldPathNamespaceMapper implements NamespaceMapper {
           optionalData.orElseThrow(
               () ->
                   new DataException(
-                      format("Invalid %s document: %s", isKey ? "key" : "value", sinkRecord)));
+                      format("Invalid %s document in topic:%s at partition:%s offset:%s",
+                          isKey ? "key" : "value", sinkRecord.topic(), sinkRecord.kafkaPartition(),
+                          sinkRecord.kafkaOffset())));
 
       Optional<BsonValue> optionalFieldValue = fieldLookup(path, data);
       if (continueProcessing(optionalFieldValue.isPresent())) {
