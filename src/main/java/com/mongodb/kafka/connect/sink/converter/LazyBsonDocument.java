@@ -158,7 +158,9 @@ public class LazyBsonDocument extends BsonDocument {
             unwrapped = converter.apply(record.keySchema(), record.key());
           } catch (Exception e) {
             throw new DataException(
-                format("Could not convert key `%s` into a BsonDocument.", record.key()), e);
+                format("Could not convert key in topic:%s at partition:%s offset:%s into a "
+                        + "BsonDocument", record.topic(), record.kafkaPartition(),
+                    record.kafkaOffset()), e);
           }
           break;
         case VALUE:
@@ -166,7 +168,9 @@ public class LazyBsonDocument extends BsonDocument {
             unwrapped = converter.apply(record.valueSchema(), record.value());
           } catch (Exception e) {
             throw new DataException(
-                format("Could not convert value `%s` into a BsonDocument.", record.value()), e);
+                format("Could not convert value in topic:%s at partition:%s offset:%s into a "
+                        + "BsonDocument.", record.topic(), record.kafkaPartition(),
+                    record.kafkaOffset()), e);
           }
           break;
         default:
