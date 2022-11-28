@@ -39,8 +39,8 @@ public class SinkConverter {
   private static final RecordConverter BYTE_ARRAY_RECORD_CONVERTER = new ByteArrayRecordConverter();
 
   public SinkDocument convert(final SinkRecord record) {
-    LOGGER.debug(record.toString());
-
+    LOGGER.debug("record in topic:{} at partition:{}, offset:{}",
+        record.topic(), record.kafkaPartition(), record.kafkaOffset());
     BsonDocument keyDoc = null;
     if (record.key() != null) {
       keyDoc =
