@@ -65,7 +65,7 @@ Additional contributors can be found [here](https://github.com/mongodb/mongo-kaf
 ## Release process
 
 - `./gradlew publishArchives` - publishes to Maven
-- `./gradlew createConfluentArchive` - creates the confluent archive / github release zip file
+-  `./gradlew createConfluentArchive` - creates the confluent archive / github release zip file
 
 ### Releasing CCloud connectors to Confluent staging bucket
 
