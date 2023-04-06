@@ -30,7 +30,6 @@ import static com.mongodb.kafka.connect.util.ConfigHelper.fullDocumentBeforeChan
 import static com.mongodb.kafka.connect.util.ConfigHelper.fullDocumentFromString;
 import static com.mongodb.kafka.connect.util.ConfigHelper.jsonArrayFromString;
 import static com.mongodb.kafka.connect.util.ServerApiConfig.addServerApiConfig;
-import static com.mongodb.kafka.connect.util.SslConfigs.addSslConfigDef;
 import static com.mongodb.kafka.connect.util.Validators.emptyString;
 import static com.mongodb.kafka.connect.util.Validators.errorCheckingValueValidator;
 import static com.mongodb.kafka.connect.util.VisibleForTesting.AccessModifier.PACKAGE;
@@ -265,8 +264,7 @@ public class MongoSourceConfig extends AbstractConfig {
 
   public static final String POLL_AWAIT_TIME_MS_CONFIG = "poll.await.time.ms";
   private static final String POLL_AWAIT_TIME_MS_DOC =
-      "The maximum amount of time in milliseconds the server waits for new data changes to report to the change stream cursor "
-          + "before returning an empty batch.";
+      "The amount of time to wait before checking for new results on the change stream";
   private static final long POLL_AWAIT_TIME_MS_DEFAULT = 5000;
   private static final String POLL_AWAIT_TIME_MS_DISPLAY = "Poll await time (ms)";
 
@@ -916,7 +914,6 @@ public class MongoSourceConfig extends AbstractConfig {
         COLLECTION_DISPLAY);
 
     addServerApiConfig(configDef);
-    addSslConfigDef(configDef);
 
     group = "Change stream";
     orderInGroup = 0;

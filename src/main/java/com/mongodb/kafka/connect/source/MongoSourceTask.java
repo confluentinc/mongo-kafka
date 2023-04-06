@@ -22,7 +22,6 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.PROVIDER_CONFIG
 import static com.mongodb.kafka.connect.util.Assertions.assertNotNull;
 import static com.mongodb.kafka.connect.util.ConfigHelper.getMongoDriverInformation;
 import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
-import static com.mongodb.kafka.connect.util.SslConfigs.setupSsl;
 import static java.lang.String.format;
 import static java.util.Collections.singletonMap;
 
@@ -114,8 +113,7 @@ public final class MongoSourceTask extends SourceTask {
     }
 
     boolean shouldCopyData = shouldCopyData(context, sourceConfig);
-    String connectorName = JmxStatisticsManager.getConnectorName(props);
-    StatisticsManager statisticsManager = new JmxStatisticsManager(shouldCopyData, connectorName);
+    StatisticsManager statisticsManager = new JmxStatisticsManager(shouldCopyData);
     try {
       CommandListener statisticsCommandListener =
           new CommandListener() {
@@ -133,10 +131,8 @@ public final class MongoSourceTask extends SourceTask {
       MongoClientSettings.Builder builder =
           MongoClientSettings.builder()
               .applyConnectionString(sourceConfig.getConnectionString())
-              .addCommandListener(statisticsCommandListener)
-              .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sourceConfig));
+              .addCommandListener(statisticsCommandListener);
       setServerApi(builder, sourceConfig);
-
       MongoClient mongoClient =
           MongoClients.create(
               builder.build(),

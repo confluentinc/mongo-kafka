@@ -32,7 +32,6 @@ import org.apache.kafka.connect.source.SourceConnector;
 
 import com.mongodb.kafka.connect.source.MongoSourceConfig;
 import com.mongodb.kafka.connect.source.MongoSourceTask;
-import com.mongodb.kafka.connect.util.ConfigHelper;
 
 public class MongoSourceConnector extends SourceConnector {
   private static final List<String> REQUIRED_SOURCE_ACTIONS = asList("changeStream", "find");
@@ -50,17 +49,15 @@ public class MongoSourceConnector extends SourceConnector {
 
   @Override
   public Config validate(final Map<String, String> connectorConfigs) {
-    Config rawConfig = super.validate(connectorConfigs);
+    Config config = super.validate(connectorConfigs);
     MongoSourceConfig sourceConfig;
     try {
       sourceConfig = new MongoSourceConfig(connectorConfigs);
     } catch (Exception e) {
-      return rawConfig;
+      return config;
     }
 
-    final Config config = ConfigHelper.evaluateConfigValues(rawConfig, sourceConfig);
-
-    validateCanConnect(sourceConfig, config, MongoSourceConfig.CONNECTION_URI_CONFIG)
+    validateCanConnect(config, MongoSourceConfig.CONNECTION_URI_CONFIG)
         .ifPresent(
             client -> {
               try {

@@ -17,9 +17,6 @@
  */
 package com.mongodb.kafka.connect.source.statistics;
 
-import java.util.Map;
-import javax.management.ObjectName;
-
 import com.mongodb.annotations.ThreadSafe;
 
 import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
@@ -37,12 +34,11 @@ public final class JmxStatisticsManager implements StatisticsManager {
   private final CombinedMongoMBean combinedStatistics;
   private volatile SourceTaskStatistics currentStatistics;
 
-  public JmxStatisticsManager(final boolean startWithCopyStatistics, final String connectorName) {
-    copyStatistics = new SourceTaskStatistics(getMBeanName(COPY_BEAN, connectorName));
-    streamStatistics = new SourceTaskStatistics(getMBeanName(STREAM_BEAN, connectorName));
+  public JmxStatisticsManager(final boolean startWithCopyStatistics) {
+    copyStatistics = new SourceTaskStatistics(getMBeanName(COPY_BEAN));
+    streamStatistics = new SourceTaskStatistics(getMBeanName(STREAM_BEAN));
     combinedStatistics =
-        new CombinedMongoMBean(
-            getMBeanName(COMBINED_BEAN, connectorName), copyStatistics, streamStatistics);
+        new CombinedMongoMBean(getMBeanName(COMBINED_BEAN), copyStatistics, streamStatistics);
     currentStatistics = startWithCopyStatistics ? copyStatistics : streamStatistics;
     copyStatistics.register();
     streamStatistics.register();
@@ -66,22 +62,8 @@ public final class JmxStatisticsManager implements StatisticsManager {
     combinedStatistics.unregister();
   }
 
-  private static String getMBeanName(final String mBean, final String connectorName) {
+  private static String getMBeanName(final String mBean) {
     String id = MBeanServerUtils.taskIdFromCurrentThread();
-    return "com.mongodb.kafka.connect:type=source-task-metrics,connector="
-        + connectorName
-        + ",task="
-        + mBean
-        + "-"
-        + id;
-  }
-
-  public static String getConnectorName(final Map<String, String> props) {
-    String originalName = props.getOrDefault("name", "unknown");
-    String quotedName = ObjectName.quote(originalName);
-    if (quotedName.substring(1, quotedName.length() - 1).equals(originalName)) {
-      return originalName;
-    }
-    return quotedName;
+    return "com.mongodb.kafka.connect:type=source-task-metrics,task=" + mBean + "-" + id;
   }
 }
