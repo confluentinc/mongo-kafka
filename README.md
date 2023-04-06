@@ -65,7 +65,20 @@ Additional contributors can be found [here](https://github.com/mongodb/mongo-kaf
 ## Release process
 
 - `./gradlew publishArchives` - publishes to Maven
--  `./gradlew createConfluentArchive` - creates the confluent archive / github release zip file
+- `./gradlew createConfluentArchive` - creates the confluent archive / github release zip file
+
+### Releasing CCloud connectors to Confluent staging bucket
+
+We use the [Release Job](https://jenkins.confluent.io/job/Connect-Releases-Org/job/connect-releases/job/master) to release the CCloud connectors to the staging bucket. In case the Release Job is broken, we need to do it locally with the following steps:
+
+1. Commit the code changes and merge to the release branch
+2. After the changes are merged, update the version in build.gradle.kts file (this will be an rc version followed by initials of the last commit hash e.g. `1.7.0-rc-b5f3b89`. Commit and merge this change as well.)
+3. Generate a tag with version on the release branch and push it (example as follows)
+- git tag v1.7.0-rc-b5f3b89
+- git push origin --tag v1.7.0-rc-b5f3b89
+4. Run `./gradlew createConfluentArchive`
+5. Upload the zip file from `./build/confluent/` to [staging bucket](https://s3.console.aws.amazon.com/s3/buckets/plugin-registry-cloud-staging-storage?region=us-west-1&prefix=api/plugins/mongodb/&showversions=false) in AWS and replicate the permissions for the zip file from previous version
+
 
 ## IntelliJ IDEA
 
