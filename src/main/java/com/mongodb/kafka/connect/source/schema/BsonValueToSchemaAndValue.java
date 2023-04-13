@@ -310,7 +310,6 @@ public class BsonValueToSchemaAndValue {
   }
 
   private DataException missingFieldException(final Field field, final BsonDocument value) {
-    return new DataException(
-        format("Missing field '%s'", field.name()));
+    return new DataException(format("Missing field '%s'", field.name()));
   }
 }

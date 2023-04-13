@@ -17,7 +17,6 @@
 package com.mongodb.kafka.connect.sink.cdc.qlik.rdbms;
 
 import static com.mongodb.kafka.connect.sink.cdc.qlik.rdbms.operations.OperationHelper.DEFAULT_OPERATIONS;
-import static java.lang.String.format;
 
 import java.util.Map;
 import java.util.Optional;
@@ -71,9 +70,7 @@ public class RdbmsHandler extends QlikCdcHandler {
     OperationType operationType = OperationHelper.getOperationType(valueDocument);
     CdcOperation cdcOperation =
         getCdcOperation(operationType)
-            .orElseThrow(
-                () ->
-                    new DataException("Unable to determine the CDC operation"));
+            .orElseThrow(() -> new DataException("Unable to determine the CDC operation"));
 
     return Optional.ofNullable(cdcOperation.perform(new SinkDocument(keyDocument, valueDocument)));
   }

@@ -71,8 +71,7 @@ class MongoProcessedSinkRecordDataTest {
           TEST_TOPIC, 0, Schema.STRING_SCHEMA, "{_id: 1}", Schema.STRING_SCHEMA, VALUE_JSON, 1);
 
   private static final SinkRecord TOMBSTONE_SINK_RECORD =
-      new SinkRecord(
-          TEST_TOPIC, 0, Schema.STRING_SCHEMA, "{_id: 1}", null, null, 1);
+      new SinkRecord(TEST_TOPIC, 0, Schema.STRING_SCHEMA, "{_id: 1}", null, null, 1);
 
   private static final SinkRecord INVALID_SINK_RECORD =
       new SinkRecord(TEST_TOPIC, 0, Schema.INT32_SCHEMA, 1, Schema.INT32_SCHEMA, 1, 1);

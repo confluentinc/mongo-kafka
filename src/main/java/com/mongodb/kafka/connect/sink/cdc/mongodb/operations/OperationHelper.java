@@ -46,8 +46,7 @@ final class OperationHelper {
 
   static BsonDocument getDocumentKey(final BsonDocument changeStreamDocument) {
     if (!changeStreamDocument.containsKey(DOCUMENT_KEY)) {
-      throw new DataException(
-          format("Missing %s field", DOCUMENT_KEY));
+      throw new DataException(format("Missing %s field", DOCUMENT_KEY));
     } else if (!changeStreamDocument.get(DOCUMENT_KEY).isDocument()) {
       throw new DataException(
           format(
@@ -64,14 +63,12 @@ final class OperationHelper {
 
   static BsonDocument getFullDocument(final BsonDocument changeStreamDocument) {
     if (!changeStreamDocument.containsKey(FULL_DOCUMENT)) {
-      throw new DataException(
-          format("Missing %s field", FULL_DOCUMENT));
+      throw new DataException(format("Missing %s field", FULL_DOCUMENT));
     } else if (!changeStreamDocument.get(FULL_DOCUMENT).isDocument()) {
       throw new DataException(
           format(
               "Unexpected %s field type, expecting a document but found `%s`",
-              FULL_DOCUMENT,
-              changeStreamDocument.get(FULL_DOCUMENT)));
+              FULL_DOCUMENT, changeStreamDocument.get(FULL_DOCUMENT)));
     }
 
     return changeStreamDocument.getDocument(FULL_DOCUMENT);
@@ -79,14 +76,12 @@ final class OperationHelper {
 
   static BsonDocument getUpdateDocument(final BsonDocument changeStreamDocument) {
     if (!changeStreamDocument.containsKey(UPDATE_DESCRIPTION)) {
-      throw new DataException(
-          format("Missing %s field", UPDATE_DESCRIPTION));
+      throw new DataException(format("Missing %s field", UPDATE_DESCRIPTION));
     } else if (!changeStreamDocument.get(UPDATE_DESCRIPTION).isDocument()) {
       throw new DataException(
           format(
               "Unexpected %s field type, expected a document found `%s`",
-              UPDATE_DESCRIPTION,
-              changeStreamDocument.get(UPDATE_DESCRIPTION)));
+              UPDATE_DESCRIPTION, changeStreamDocument.get(UPDATE_DESCRIPTION)));
     }
 
     BsonDocument updateDescription = changeStreamDocument.getDocument(UPDATE_DESCRIPTION);
@@ -100,10 +95,7 @@ final class OperationHelper {
     }
 
     if (!updateDescription.containsKey(UPDATED_FIELDS)) {
-      throw new DataException(
-          format(
-              "Missing %s.%s field",
-              UPDATE_DESCRIPTION, UPDATED_FIELDS));
+      throw new DataException(format("Missing %s.%s field", UPDATE_DESCRIPTION, UPDATED_FIELDS));
     } else if (!updateDescription.get(UPDATED_FIELDS).isDocument()) {
       throw new DataException(
           format(
@@ -112,10 +104,7 @@ final class OperationHelper {
     }
 
     if (!updateDescription.containsKey(REMOVED_FIELDS)) {
-      throw new DataException(
-          format(
-              "Missing %s.%s field",
-              UPDATE_DESCRIPTION, REMOVED_FIELDS));
+      throw new DataException(format("Missing %s.%s field", UPDATE_DESCRIPTION, REMOVED_FIELDS));
     } else if (!updateDescription.get(REMOVED_FIELDS).isArray()) {
       throw new DataException(
           format(

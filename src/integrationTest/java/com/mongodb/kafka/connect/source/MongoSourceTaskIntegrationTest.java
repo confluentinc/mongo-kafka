@@ -789,8 +789,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
           task.logCapture.getEvents().stream()
               .filter(e -> e.getLevel().equals(Level.ERROR))
               .anyMatch(
-                  e ->
-                      e.getMessage().toString().contains("Exception creating Source record")));
+                  e -> e.getMessage().toString().contains("Exception creating Source record")));
 
       // Reset and test copy existing without logs
       task.stop();

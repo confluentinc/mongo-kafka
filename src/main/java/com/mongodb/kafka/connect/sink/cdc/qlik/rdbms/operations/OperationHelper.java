@@ -105,7 +105,8 @@ public final class OperationHelper {
                   return getSubDocumentOrOriginal(DATA_BEFORE_FIELD, messageDocument);
                 });
     if (filter.isEmpty()) {
-      throw new DataException("Error: Value Document does not contain the expected data, cannot create filter.");
+      throw new DataException(
+          "Error: Value Document does not contain the expected data, cannot create filter.");
     }
     return filter;
   }
@@ -123,7 +124,8 @@ public final class OperationHelper {
                       getSubDocumentNotNullOrOriginal(DATA_FIELD, messageDocument));
                 });
     if (filter.isEmpty()) {
-      throw new DataException("Error: Value Document does not contain the expected data, cannot create filter.");
+      throw new DataException(
+          "Error: Value Document does not contain the expected data, cannot create filter.");
     }
     return filter;
   }
@@ -149,7 +151,8 @@ public final class OperationHelper {
     BsonDocument afterDocument = getSubDocumentOrOriginal(DATA_FIELD, messageDocument);
 
     if (afterDocument.isEmpty()) {
-      throw new DataException("Error: Value Document does not contain the expected data, cannot create filter.");
+      throw new DataException(
+          "Error: Value Document does not contain the expected data, cannot create filter.");
     }
 
     BsonDocument updates = new BsonDocument();
@@ -195,9 +198,7 @@ public final class OperationHelper {
 
       if (!fieldValue.isDocument()) {
         throw new DataException(
-            format(
-                "Error: Value document contains a '%s' that is not a document",
-                fieldName));
+            format("Error: Value document contains a '%s' that is not a document", fieldName));
       }
       return fieldValue.asDocument();
     }

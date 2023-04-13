@@ -64,10 +64,7 @@ public final class ChangeStreamHandler extends CdcHandler {
     BsonDocument changeStreamDocument = doc.getValueDoc().orElseGet(BsonDocument::new);
 
     if (!changeStreamDocument.containsKey(OPERATION_TYPE)) {
-      throw new DataException(
-          format(
-              "Error: `%s` field in doc is missing",
-              OPERATION_TYPE));
+      throw new DataException(format("Error: `%s` field in doc is missing", OPERATION_TYPE));
     } else if (!changeStreamDocument.get(OPERATION_TYPE).isString()) {
       throw new DataException("Error: Unexpected CDC operation type, should be a string");
     }
