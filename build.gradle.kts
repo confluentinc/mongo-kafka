@@ -39,7 +39,7 @@ plugins {
 }
 
 group = "org.mongodb.kafka"
-version = "1.9.1"
+version = "1.9.1-rc-40c955e"
 description = "The official MongoDB Apache Kafka Connect Connector."
 
 repositories {
