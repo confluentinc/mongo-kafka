@@ -219,9 +219,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
 
               String topicName = topicMapper.getTopic(changeStreamDocument);
               if (topicName.isEmpty()) {
-                LOGGER.warn(
-                    "No topic set. Could not publish the message: {}",
-                    changeStreamDocument.toJson());
+                LOGGER.warn("No topic set. Could not publish the message.");
               } else {
 
                 Optional<BsonDocument> valueDocument = Optional.empty();
@@ -302,13 +300,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
               valueSchemaAndValue.schema(),
               valueSchemaAndValue.value()));
     } catch (Exception e) {
-      Supplier<String> errorMessage =
-          () ->
-              format(
-                  "%s : Exception creating Source record for: Key=%s Value=%s",
-                  e.getMessage(),
-                  keyDocument == null ? "" : keyDocument.toJson(),
-                  valueDocument == null ? "" : valueDocument.toJson());
+      Supplier<String> errorMessage = () -> "Exception creating Source record";
       if (sourceConfig.logErrors()) {
         LOGGER.error(errorMessage.get(), e);
       }
