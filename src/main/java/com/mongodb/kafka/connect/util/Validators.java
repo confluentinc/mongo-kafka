@@ -33,11 +33,14 @@ import java.util.regex.Pattern;
 
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.config.types.Password;
 import org.slf4j.Logger;
 
 import com.mongodb.kafka.connect.util.config.BsonTimestampParser;
 
 public final class Validators {
+
+  private static String redactedUrl = "[REDACTED URL]";
 
   public interface ValidatorWithOperators extends ConfigDef.Validator {
     default ValidatorWithOperators or(final ValidatorWithOperators other) {
@@ -151,6 +154,34 @@ public final class Validators {
   public static ValidatorWithOperators startAtOperationTimeValidator(final Logger logger) {
     return (propertyName, propertyValue) ->
         BsonTimestampParser.parse(propertyName, (String) propertyValue, logger);
+  }
+
+  public static ValidatorWithOperators errorCheckingPasswordValueValidator(
+      final String validValuesString, final Consumer<String> consumer) {
+    return withPasswordDef(
+        validValuesString,
+        ((name, value) -> {
+          try {
+            consumer.accept((String) value);
+          } catch (Exception e) {
+            throw new ConfigException(name, redactedUrl, e.getMessage());
+          }
+        }));
+  }
+
+  public static ValidatorWithOperators withPasswordDef(
+      final String validatorString, final ConfigDef.Validator validator) {
+    return new ValidatorWithOperators() {
+      @Override
+      public void ensureValid(final String name, final Object value) {
+        validator.ensureValid(name, ((Password) value).value());
+      }
+
+      @Override
+      public String toString() {
+        return validatorString;
+      }
+    };
   }
 
   public static final class EnumValidatorAndRecommender
