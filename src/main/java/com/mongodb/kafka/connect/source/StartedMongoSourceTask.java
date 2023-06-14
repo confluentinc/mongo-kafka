@@ -54,6 +54,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
+import com.mongodb.MongoQueryException;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
@@ -579,8 +580,12 @@ final class StartedMongoSourceTask implements AutoCloseable {
         if (sourceConfig.tolerateErrors() && changeStreamNotValid(e)) {
           cursor = tryRecreateCursor(e);
         } else {
-          LOGGER.info(
+          LOGGER.error(
               "An exception occurred when trying to get the next item from the Change Stream", e);
+          if (e instanceof MongoQueryException &&
+              ((MongoQueryException) e).getErrorCode() == 286) {
+            throw new ConnectException("Failed to resume change stream", e);
+          }
         }
       }
     } catch (Exception e) {
