@@ -161,8 +161,9 @@ public class LazyBsonDocument extends BsonDocument {
           } catch (Exception e) {
             throw new DataException(
                 format(
-                    "Could not convert key %s into a BsonDocument.",
-                    unambiguousToString(record.key())),
+                    "Could not convert key in topic:%s at partition:%s offset:%s into a "
+                        + "BsonDocument",
+                    record.topic(), record.kafkaPartition(), record.kafkaOffset()),
                 e);
           }
           break;
@@ -172,8 +173,9 @@ public class LazyBsonDocument extends BsonDocument {
           } catch (Exception e) {
             throw new DataException(
                 format(
-                    "Could not convert value %s into a BsonDocument.",
-                    unambiguousToString(record.value())),
+                    "Could not convert value in topic:%s at partition:%s offset:%s into a "
+                        + "BsonDocument.",
+                    record.topic(), record.kafkaPartition(), record.kafkaOffset()),
                 e);
           }
           break;

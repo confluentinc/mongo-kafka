@@ -400,6 +400,12 @@ public final class ConnectorValidationIntegrationTest {
   }
 
   @Test
+  @DisplayName("Ensure source configuration validation handles invalid connection host in Url")
+  void testSourceConfigValidationInvalidConnectionUrl() {
+    assertInvalidSource(createSourceProperties("mongodb+srv://mongo:mongo@27017"));
+  }
+
+  @Test
   @DisplayName("Ensure source configuration validation works with invalid serverApi")
   void testSourceConfigValidationWithInvalidServerApi() {
     assumeFalse(isAtleastFiveDotZero(getMongoClient()));
