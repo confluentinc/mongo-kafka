@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.Config;
 import org.apache.kafka.common.config.ConfigValue;
+import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,39 +73,47 @@ public final class ConnectionValidator {
 
       AtomicBoolean connected = new AtomicBoolean();
       CountDownLatch latch = new CountDownLatch(1);
-      ConnectionString connectionString = new ConnectionString((String) configValue.value());
+      ConnectionString connectionString =
+          new ConnectionString(((Password) configValue.value()).value());
       MongoClientSettings.Builder mongoClientSettingsBuilder =
           MongoClientSettings.builder().applyConnectionString(connectionString);
       setServerApi(mongoClientSettingsBuilder, config);
+      final MongoClientSettings mongoClientSettings;
+      try {
+        mongoClientSettings =
+            mongoClientSettingsBuilder
+                .applyToClusterSettings(
+                    b ->
+                        b.addClusterListener(
+                            new ClusterListener() {
+                              @Override
+                              public void clusterOpening(final ClusterOpeningEvent event) {}
 
-      MongoClientSettings mongoClientSettings =
-          mongoClientSettingsBuilder
-              .applyToClusterSettings(
-                  b ->
-                      b.addClusterListener(
-                          new ClusterListener() {
-                            @Override
-                            public void clusterOpening(final ClusterOpeningEvent event) {}
+                              @Override
+                              public void clusterClosed(final ClusterClosedEvent event) {}
 
-                            @Override
-                            public void clusterClosed(final ClusterClosedEvent event) {}
-
-                            @Override // Different database than has permissions for
-                            public void clusterDescriptionChanged(
-                                final ClusterDescriptionChangedEvent event) {
-                              ReadPreference readPreference =
-                                  connectionString.getReadPreference() != null
-                                      ? connectionString.getReadPreference()
-                                      : ReadPreference.primaryPreferred();
-                              if (!connected.get()
-                                  && event.getNewDescription().hasReadableServer(readPreference)) {
-                                connected.set(true);
-                                latch.countDown();
+                              @Override // Different database than has permissions for
+                              public void clusterDescriptionChanged(
+                                  final ClusterDescriptionChangedEvent event) {
+                                ReadPreference readPreference =
+                                    connectionString.getReadPreference() != null
+                                        ? connectionString.getReadPreference()
+                                        : ReadPreference.primaryPreferred();
+                                if (!connected.get()
+                                    && event
+                                        .getNewDescription()
+                                        .hasReadableServer(readPreference)) {
+                                  connected.set(true);
+                                  latch.countDown();
+                                }
                               }
-                            }
-                          }))
-              .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, connectorProperties))
-              .build();
+                            }))
+                .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, connectorProperties))
+                .build();
+      } catch (IllegalArgumentException exception) {
+        configValue.addErrorMessage(exception.getMessage());
+        return Optional.empty();
+      }
 
       long latchTimeout =
           mongoClientSettings.getSocketSettings().getConnectTimeout(TimeUnit.MILLISECONDS) + 500;
