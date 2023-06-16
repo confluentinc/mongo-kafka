@@ -107,9 +107,9 @@ public final class ConnectionValidator {
                                   latch.countDown();
                                 }
                               }
-                          }))
-              .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, connectorProperties))
-              .build();
+                            }))
+                .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, connectorProperties))
+                .build();
       } catch (IllegalArgumentException exception) {
         configValue.addErrorMessage(exception.getMessage());
         return Optional.empty();

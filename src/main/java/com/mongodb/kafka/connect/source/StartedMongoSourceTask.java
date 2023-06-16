@@ -54,7 +54,6 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
-import com.mongodb.MongoQueryException;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
@@ -74,6 +73,7 @@ import org.bson.RawBsonDocument;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
 import com.mongodb.MongoException;
+import com.mongodb.MongoQueryException;
 import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.MongoChangeStreamCursor;
 import com.mongodb.client.MongoClient;
@@ -466,6 +466,8 @@ final class StartedMongoSourceTask implements AutoCloseable {
         if (changeStreamNotValid(e)) {
           throw new ConnectException(
               "ResumeToken not found. Cannot create a change stream cursor", e);
+        } else {
+          throw new ConnectException("Failed to resume change stream", e);
         }
       }
       return null;
@@ -582,8 +584,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
         } else {
           LOGGER.error(
               "An exception occurred when trying to get the next item from the Change Stream", e);
-          if (e instanceof MongoQueryException &&
-              ((MongoQueryException) e).getErrorCode() == 286) {
+          if (e instanceof MongoQueryException && ((MongoQueryException) e).getErrorCode() == 286) {
             throw new ConnectException("Failed to resume change stream", e);
           }
         }
