@@ -75,6 +75,7 @@ import org.bson.RawBsonDocument;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
 import com.mongodb.MongoException;
+import com.mongodb.MongoQueryException;
 import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.MongoChangeStreamCursor;
 import com.mongodb.client.MongoClient;
@@ -235,8 +236,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
 
       String topicName = topicMapper.getTopic(changeStreamDocument);
       if (topicName.isEmpty()) {
-        LOGGER.warn(
-            "No topic set. Could not publish the message: {}", changeStreamDocument.toJson());
+        LOGGER.warn("No topic set. Could not publish the message.");
       } else {
 
         Optional<BsonDocument> valueDocument = Optional.empty();
@@ -322,13 +322,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
               valueSchemaAndValue.schema(),
               valueSchemaAndValue.value()));
     } catch (Exception e) {
-      Supplier<String> errorMessage =
-          () ->
-              format(
-                  "%s : Exception creating Source record for: Key=%s Value=%s",
-                  e.getMessage(),
-                  keyDocument == null ? "" : keyDocument.toJson(),
-                  valueDocument == null ? "" : valueDocument.toJson());
+      Supplier<String> errorMessage = () -> "Exception creating Source record";
       if (sourceConfig.logErrors()) {
         LOGGER.error(errorMessage.get(), e);
       }
@@ -496,6 +490,8 @@ final class StartedMongoSourceTask implements AutoCloseable {
         if (changeStreamNotValid(e)) {
           throw new ConnectException(
               "ResumeToken not found. Cannot create a change stream cursor", e);
+        } else {
+          throw new ConnectException("Failed to resume change stream", e);
         }
       }
       return null;
@@ -620,10 +616,11 @@ final class StartedMongoSourceTask implements AutoCloseable {
                 "An exception occurred when trying to get the next item from the Change Stream", e);
           }
         } else {
-          throw new ConnectException(
-              "An exception occurred when trying to get the next item from the Change Stream: "
-                  + e.getMessage(),
-              e);
+          LOGGER.error(
+              "An exception occurred when trying to get the next item from the Change Stream", e);
+          if (e instanceof MongoQueryException && ((MongoQueryException) e).getErrorCode() == 286) {
+            throw new ConnectException("Failed to resume change stream", e);
+          }
         }
       }
     } catch (Exception e) {
