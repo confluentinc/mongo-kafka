@@ -290,7 +290,7 @@ public class MongoSourceConfig extends AbstractConfig {
           PUBLISH_FULL_DOCUMENT_ONLY_TOMBSTONE_ON_DELETE_DEFAULT);
 
   public static final String DOCUMENT_KEY_AS_KEY_CONFIG = "change.stream.document.key.as.key";
-  private static final boolean DOCUMENT_KEY_AS_KEY_DEFAULT = true;
+  private static final boolean DOCUMENT_KEY_AS_KEY_DEFAULT = false;
   private static final String DOCUMENT_KEY_AS_KEY_DISPLAY =
       "Use the `documentKey` for the source record key";
   private static final String DOCUMENT_KEY_AS_KEY_DOC =
