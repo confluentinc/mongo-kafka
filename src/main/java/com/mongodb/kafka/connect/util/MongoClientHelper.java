@@ -19,19 +19,26 @@ package com.mongodb.kafka.connect.util;
 import org.bson.BsonDocument;
 
 import com.mongodb.client.MongoClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 public final class MongoClientHelper {
 
+  static final Logger LOGGER = LoggerFactory.getLogger(MongoClientHelper.class);
   private MongoClientHelper() {}
 
   public static boolean isAtleastFiveDotZero(final MongoClient mongoClient) {
     try {
-      return mongoClient
+      int maxWireVersion = mongoClient
               .getDatabase("admin")
               .runCommand(BsonDocument.parse("{hello: 1}"))
-              .get("maxWireVersion", 0)
-          >= 13;
+              .get("maxWireVersion", 0);
+
+      LOGGER.info("Max wire version: {}", maxWireVersion);
+      return maxWireVersion>= 13;
     } catch (RuntimeException e) {
+      LOGGER.error("Exception occurred while checking MongoDB version", e);
       return false;
     }
   }
