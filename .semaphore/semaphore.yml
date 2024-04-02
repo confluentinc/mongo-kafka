@@ -36,15 +36,15 @@ blocks:
       jobs:
         - name: Test
           commands:
-            - pip install confluent-release-tools -q
-            - . sem-pint
+            - . sem-pint -c
             - ./gradlew test
-            - . cve-scan
+            - cve-scan
       epilogue:
         always:
           commands:
             - . publish-test-results
             - artifact push workflow target/test-results
+            - artifact push workflow target
 
 after_pipeline:
   task:
@@ -62,4 +62,5 @@ after_pipeline:
         commands:
           - checkout
           - sem-version java 11
-          - emit-sonarqube-data -a test-results
+          - artifact pull workflow target
+          - emit-sonarqube-data --run_only_sonar_scan
