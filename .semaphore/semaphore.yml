@@ -25,6 +25,7 @@ global_job_config:
     commands:
       - checkout
       - sem-version java 8
+      - . cache-maven restore
 
 blocks:
   - name: Test
@@ -36,15 +37,27 @@ blocks:
       jobs:
         - name: Test
           commands:
-            - pip install confluent-release-tools -q
-            - . sem-pint
-            - ./gradlew test
-            - . cve-scan
+            - . sem-pint -c
+            - mvn -Dcloud -Pjenkins -U -Dmaven.wagon.http.retryHandler.count=10 --batch-mode --no-transfer-progress clean verify install dependency:analyze validate
+            - cve-scan
+            - . cache-maven store
       epilogue:
         always:
           commands:
             - . publish-test-results
             - artifact push workflow target/test-results
+            - artifact push workflow target
+
+  - name: Release
+    dependencies: ["Test"]
+    run:
+      when: "branch = 'master' or branch =~ '[0-9]+\\.[0-9]+\\.x'"
+    task:
+      jobs:
+        - name: Release
+          commands:
+            - mvn -Dcloud -Pjenkins -U -Dmaven.wagon.http.retryHandler.count=10 --batch-mode -DaltDeploymentRepository=confluent-codeartifact-internal::default::https://confluent-519856050701.d.codeartifact.us-west-2.amazonaws.com/maven/maven-snapshots/
+              -DrepositoryId=confluent-codeartifact-internal deploy -DskipTests
 
 after_pipeline:
   task:
@@ -62,4 +75,5 @@ after_pipeline:
         commands:
           - checkout
           - sem-version java 11
-          - emit-sonarqube-data -a test-results
+          - artifact pull workflow target
+          - emit-sonarqube-data --run_only_sonar_scan
