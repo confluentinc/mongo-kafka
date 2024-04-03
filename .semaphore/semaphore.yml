@@ -38,7 +38,7 @@ blocks:
           commands:
             - . sem-pint -c
             - ./gradlew test
-            - cve-scan
+            - . cve-scan
       epilogue:
         always:
           commands:
