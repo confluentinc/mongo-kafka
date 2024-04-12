@@ -231,7 +231,7 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
 // Spotless is used to lint and reformat source files.
 spotless {
     java {
-        googleJavaFormat("1.10.0")
+        googleJavaFormat("1.12.0")
         importOrder("java", "io", "org", "org.bson", "com.mongodb", "com.mongodb.kafka", "")
         removeUnusedImports() // removes any unused imports
         trimTrailingWhitespace()
