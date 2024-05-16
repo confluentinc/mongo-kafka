@@ -30,8 +30,8 @@ import org.slf4j.LoggerFactory;
 import org.bson.BsonDocument;
 
 import com.mongodb.client.model.ReplaceOneModel;
-import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.ReplaceOptions;
+import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.WriteModel;
 
 import com.mongodb.kafka.connect.sink.cdc.CdcOperation;
@@ -51,9 +51,8 @@ public class Update implements CdcOperation {
     BsonDocument documentKey = getDocumentKey(changeStreamDocument);
     if (hasFullDocument(changeStreamDocument)) {
       LOGGER.debug("The full Document available, creating a replace operation.");
-      return new ReplaceOneModel<>(documentKey,
-              getFullDocument(changeStreamDocument),
-              new ReplaceOptions().upsert(true));
+      return new ReplaceOneModel<>(
+          documentKey, getFullDocument(changeStreamDocument), new ReplaceOptions().upsert(true));
     }
 
     LOGGER.debug("No full document field available, creating update operation.");
