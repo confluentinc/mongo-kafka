@@ -74,9 +74,9 @@ class UpdateTest {
         "filter expected to be of type BsonDocument");
     assertEquals(CHANGE_EVENT.getDocument("documentKey"), writeModel.getFilter());
     assertEquals(CHANGE_EVENT.getDocument("fullDocument"), writeModel.getReplacement());
-    assertFalse(
+    assertTrue(
         writeModel.getReplaceOptions().isUpsert(),
-        "update replacement expected not to be in upsert mode");
+        "update replacement expected to be in upsert mode");
   }
 
   @Test
