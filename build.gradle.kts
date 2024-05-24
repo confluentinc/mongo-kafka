@@ -228,32 +228,6 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     reports.maybeCreate("xml").isEnabled = project.hasProperty("xmlReports.enabled")
 }
 
-// Spotless is used to lint and reformat source files.
-spotless {
-    java {
-        googleJavaFormat("1.7")
-        importOrder("java", "io", "org", "org.bson", "com.mongodb", "com.mongodb.kafka", "")
-        removeUnusedImports() // removes any unused imports
-        trimTrailingWhitespace()
-        endWithNewline()
-        indentWithSpaces()
-    }
-
-    kotlinGradle {
-        ktlint("0.30.0")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-
-    format("extraneous") {
-        target("*.xml", "*.yml", "*.md")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-}
-
 tasks.named("compileJava") {
     dependsOn(":spotlessApply")
 }
