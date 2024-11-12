@@ -318,7 +318,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
           return Optional.empty();
         }
         ConnectHeaders headers = new ConnectHeaders();
-        headers.addString("error_message", e.getMessage()!= null ? e.getMessage() : "Unknown error occurred");
+        headers.addString("error_message", e.getMessage() != null ? e.getMessage() : "Unknown error occurred");
         return Optional.of(
             new SourceRecord(
                 partitionMap,
