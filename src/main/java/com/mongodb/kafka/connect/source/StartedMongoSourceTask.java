@@ -63,6 +63,7 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.DataException;
+import org.apache.kafka.connect.header.ConnectHeaders;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTaskContext;
 
@@ -316,15 +317,20 @@ final class StartedMongoSourceTask implements AutoCloseable {
         if (sourceConfig.getDlqTopic().isEmpty()) {
           return Optional.empty();
         }
+        ConnectHeaders headers = new ConnectHeaders();
+        headers.addString("error_message", e.getMessage() != null ? e.getMessage() : "Unknown error occurred");
         return Optional.of(
             new SourceRecord(
                 partitionMap,
                 sourceOffset,
                 sourceConfig.getDlqTopic(),
+                null,
                 Schema.STRING_SCHEMA,
                 keyDocument == null ? "" : keyDocument.toJson(),
                 Schema.STRING_SCHEMA,
-                valueDocument == null ? "" : valueDocument.toJson()));
+                valueDocument == null ? "" : valueDocument.toJson(),
+                null,
+                headers));
       }
       throw new DataException(errorMessage.get(), e);
     }
