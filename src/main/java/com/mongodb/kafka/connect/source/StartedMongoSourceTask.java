@@ -241,7 +241,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
 
                 if (valueDocument.isPresent() || isTombstoneEvent) {
                   BsonDocument valueDoc = valueDocument.orElse(new BsonDocument());
-                  LOGGER.trace("Adding {} to {}: {}", valueDoc, topicName, sourceOffset);
+                  LOGGER.trace("Adding document (hash) {} to {}: {}", valueDoc.hashCode(), topicName, sourceOffset);
 
                   if (valueDoc instanceof RawBsonDocument) {
                     int sizeBytes = ((RawBsonDocument) valueDoc).getByteBuffer().limit();
