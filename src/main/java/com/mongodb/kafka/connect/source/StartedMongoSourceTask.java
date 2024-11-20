@@ -45,16 +45,11 @@ import static java.lang.String.format;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.utils.SystemTime;
@@ -318,7 +313,15 @@ final class StartedMongoSourceTask implements AutoCloseable {
           return Optional.empty();
         }
         ConnectHeaders headers = new ConnectHeaders();
+        String truncatedStackTrace = Stream.of(e.getStackTrace())
+            .map(StackTraceElement::toString)
+            .collect(Collectors.joining("\n")) // Join with newline
+            .substring(0, Math.min(200, Stream.of(e.getStackTrace())
+            .map(StackTraceElement::toString)
+            .collect(Collectors.joining("\n")).length()));
         headers.addString("error_message", e.getMessage() != null ? e.getMessage() : "Unknown error occurred");
+        headers.addString("error_stacktrace", Arrays.toString(e.getStackTrace()));
+        headers.addString("truncated_stacktrace", truncatedStackTrace);
         return Optional.of(
             new SourceRecord(
                 partitionMap,
