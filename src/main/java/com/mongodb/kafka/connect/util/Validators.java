@@ -37,10 +37,14 @@ import org.apache.kafka.common.config.types.Password;
 import org.slf4j.Logger;
 
 import com.mongodb.kafka.connect.util.config.BsonTimestampParser;
+import org.slf4j.LoggerFactory;
 
 public final class Validators {
 
   private static String redactedUrl = "[REDACTED URL]";
+  private static final Logger LOGGER = LoggerFactory.getLogger(Validators.class);
+  private static String connectionUriErrorMessage = "Connection string is invalid. Please enter " +
+          "the valid connection.host, connection.user and connection.password and try again.";
 
   public interface ValidatorWithOperators extends ConfigDef.Validator {
     default ValidatorWithOperators or(final ValidatorWithOperators other) {
@@ -163,6 +167,9 @@ public final class Validators {
         ((name, value) -> {
           try {
             consumer.accept((String) value);
+          } catch (IllegalArgumentException e){
+            LOGGER.error(e.getMessage());
+            throw new ConfigException(name, redactedUrl, connectionUriErrorMessage);
           } catch (Exception e) {
             throw new ConfigException(name, redactedUrl, e.getMessage());
           }
