@@ -313,15 +313,22 @@ final class StartedMongoSourceTask implements AutoCloseable {
           return Optional.empty();
         }
         ConnectHeaders headers = new ConnectHeaders();
-        String truncatedStackTrace = Stream.of(e.getStackTrace())
+        String truncatedStackTrace1 = Stream.of(e.getStackTrace())
             .map(StackTraceElement::toString)
             .collect(Collectors.joining("\n")) // Join with newline
-            .substring(0, Math.min(200, Stream.of(e.getStackTrace())
+            .substring(0, Math.min(400, Stream.of(e.getStackTrace())
             .map(StackTraceElement::toString)
             .collect(Collectors.joining("\n")).length()));
         headers.addString("error_message", e.getMessage() != null ? e.getMessage() : "Unknown error occurred");
-        headers.addString("error_stacktrace", Arrays.toString(e.getStackTrace()));
-        headers.addString("truncated_stacktrace", truncatedStackTrace);
+        headers.addString("truncated_stacktrace", truncatedStackTrace1);
+
+        String fullStackTrace = Stream.of(e.getStackTrace())
+                .map(StackTraceElement::toString)
+                .collect(Collectors.joining(System.lineSeparator())); // Join with newline
+
+        String truncatedStackTrace2 = fullStackTrace.substring(0, Math.min(400, fullStackTrace.length()));
+        headers.addString("truncated_stacktrace2", truncatedStackTrace2);
+
         return Optional.of(
             new SourceRecord(
                 partitionMap,
