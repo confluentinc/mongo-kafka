@@ -18,7 +18,6 @@ package com.mongodb.kafka.connect.sink.cdc.mongodb.operations;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -74,9 +73,9 @@ class UpdateTest {
         "filter expected to be of type BsonDocument");
     assertEquals(CHANGE_EVENT.getDocument("documentKey"), writeModel.getFilter());
     assertEquals(CHANGE_EVENT.getDocument("fullDocument"), writeModel.getReplacement());
-    assertFalse(
+    assertTrue(
         writeModel.getReplaceOptions().isUpsert(),
-        "update replacement expected not to be in upsert mode");
+        "update replacement expected to be in upsert mode");
   }
 
   @Test
