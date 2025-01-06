@@ -56,6 +56,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.utils.Time;
@@ -63,6 +65,7 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.DataException;
+import org.apache.kafka.connect.header.ConnectHeaders;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTaskContext;
 
@@ -75,6 +78,7 @@ import org.bson.RawBsonDocument;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
 import com.mongodb.MongoException;
+import com.mongodb.MongoQueryException;
 import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.MongoChangeStreamCursor;
 import com.mongodb.client.MongoClient;
@@ -235,8 +239,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
 
       String topicName = topicMapper.getTopic(changeStreamDocument);
       if (topicName.isEmpty()) {
-        LOGGER.warn(
-            "No topic set. Could not publish the message: {}", changeStreamDocument.toJson());
+        LOGGER.warn("No topic set. Could not publish the message.");
       } else {
 
         Optional<BsonDocument> valueDocument = Optional.empty();
@@ -255,7 +258,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
 
         if (valueDocument.isPresent() || isTombstoneEvent) {
           BsonDocument valueDoc = valueDocument.orElse(new BsonDocument());
-          LOGGER.trace("Adding {} to {}: {}", valueDoc, topicName, sourceOffset);
+          LOGGER.trace("Adding document (hash) {} to {}: {}", valueDoc.hashCode(), topicName, sourceOffset);
 
           if (valueDoc instanceof RawBsonDocument) {
             int sizeBytes = ((RawBsonDocument) valueDoc).getByteBuffer().limit();
@@ -322,13 +325,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
               valueSchemaAndValue.schema(),
               valueSchemaAndValue.value()));
     } catch (Exception e) {
-      Supplier<String> errorMessage =
-          () ->
-              format(
-                  "%s : Exception creating Source record for: Key=%s Value=%s",
-                  e.getMessage(),
-                  keyDocument == null ? "" : keyDocument.toJson(),
-                  valueDocument == null ? "" : valueDocument.toJson());
+      Supplier<String> errorMessage = () -> "Exception creating Source record";
       if (sourceConfig.logErrors()) {
         LOGGER.error(errorMessage.get(), e);
       }
@@ -336,15 +333,26 @@ final class StartedMongoSourceTask implements AutoCloseable {
         if (sourceConfig.getDlqTopic().isEmpty()) {
           return Optional.empty();
         }
+        ConnectHeaders headers = new ConnectHeaders();
+        headers.addString("error_message", e.getMessage() != null ? e.getMessage() : "Unknown error occurred");
+        String fullStackTrace = Stream.of(e.getStackTrace())
+                .map(StackTraceElement::toString)
+                .collect(Collectors.joining(System.lineSeparator()));
+
+        String truncatedStackTrace = fullStackTrace.substring(0, Math.min(400, fullStackTrace.length()));
+        headers.addString("truncated_stacktrace", truncatedStackTrace);
         return Optional.of(
             new SourceRecord(
                 partitionMap,
                 sourceOffset,
                 sourceConfig.getDlqTopic(),
+                null,
                 Schema.STRING_SCHEMA,
                 keyDocument == null ? "" : keyDocument.toJson(),
                 Schema.STRING_SCHEMA,
-                valueDocument == null ? "" : valueDocument.toJson()));
+                valueDocument == null ? "" : valueDocument.toJson(),
+                null,
+                headers));
       }
       throw new DataException(errorMessage.get(), e);
     }
@@ -496,6 +504,8 @@ final class StartedMongoSourceTask implements AutoCloseable {
         if (changeStreamNotValid(e)) {
           throw new ConnectException(
               "ResumeToken not found. Cannot create a change stream cursor", e);
+        } else {
+          throw new ConnectException("Failed to resume change stream", e);
         }
       }
       return null;
@@ -620,10 +630,11 @@ final class StartedMongoSourceTask implements AutoCloseable {
                 "An exception occurred when trying to get the next item from the Change Stream", e);
           }
         } else {
-          throw new ConnectException(
-              "An exception occurred when trying to get the next item from the Change Stream: "
-                  + e.getMessage(),
-              e);
+          LOGGER.error(
+              "An exception occurred when trying to get the next item from the Change Stream", e);
+          if (e instanceof MongoQueryException && ((MongoQueryException) e).getErrorCode() == 286) {
+            throw new ConnectException("Failed to resume change stream", e);
+          }
         }
       }
     } catch (Exception e) {
