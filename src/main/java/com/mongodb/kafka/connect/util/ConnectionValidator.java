@@ -94,43 +94,57 @@ public final class ConnectionValidator {
             customCredentialProvider.getCustomCredential(connectorProperties.originals()));
       }
       setServerApi(mongoClientSettingsBuilder, config);
+      final MongoClientSettings mongoClientSettings;
+      try {
+        mongoClientSettings =
+            mongoClientSettingsBuilder
+                .applyToClusterSettings(
+                    b ->
+                        b.addClusterListener(
+                            new ClusterListener() {
+                              @Override
+                              public void clusterOpening(final ClusterOpeningEvent event) {}
 
-      MongoClientSettings mongoClientSettings =
-          mongoClientSettingsBuilder
-              .applyToClusterSettings(
-                  b ->
-                      b.addClusterListener(
-                          new ClusterListener() {
-                            @Override
-                            public void clusterOpening(final ClusterOpeningEvent event) {}
+                              @Override
+                              public void clusterClosed(final ClusterClosedEvent event) {}
 
-                            @Override
-                            public void clusterClosed(final ClusterClosedEvent event) {}
-
-                            @Override // Different database than has permissions for
-                            public void clusterDescriptionChanged(
-                                final ClusterDescriptionChangedEvent event) {
-                              ReadPreference readPreference =
-                                  connectionString.getReadPreference() != null
-                                      ? connectionString.getReadPreference()
-                                      : ReadPreference.primaryPreferred();
-                              if (!connected.get()
-                                  && event.getNewDescription().hasReadableServer(readPreference)) {
-                                connected.set(true);
-                                latch.countDown();
+                              @Override // Different database than has permissions for
+                              public void clusterDescriptionChanged(
+                                  final ClusterDescriptionChangedEvent event) {
+                                ReadPreference readPreference =
+                                    connectionString.getReadPreference() != null
+                                        ? connectionString.getReadPreference()
+                                        : ReadPreference.primaryPreferred();
+                                if (!connected.get()
+                                    && event
+                                        .getNewDescription()
+                                        .hasReadableServer(readPreference)) {
+                                  connected.set(true);
+                                  latch.countDown();
+                                }
                               }
-                            }
-                          }))
-              .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, connectorProperties))
-              .build();
+                            }))
+                .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, connectorProperties))
+                .build();
+      } catch (IllegalArgumentException exception) {
+        configValue.addErrorMessage(exception.getMessage());
+        return Optional.empty();
+      }
 
       long latchTimeout =
           mongoClientSettings.getSocketSettings().getConnectTimeout(TimeUnit.MILLISECONDS) + 500;
       MongoClient mongoClient = MongoClients.create(mongoClientSettings);
 
       try {
-        if (!latch.await(latchTimeout, TimeUnit.MILLISECONDS)) {
-          configValue.addErrorMessage("Unable to connect to the server.");
+        if (connectionString.isSrvProtocol()) {
+          if (!latch.await(latchTimeout, TimeUnit.MILLISECONDS)) {
+            configValue.addErrorMessage("Unable to connect to the server.");
+            mongoClient.close();
+          } else {
+            mongoClient.close();
+          }
+        } else {
+          configValue.addErrorMessage("Non-SRV protocol host is not supported");
           mongoClient.close();
         }
       } catch (InterruptedException e) {
