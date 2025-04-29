@@ -316,15 +316,28 @@ final class StartedMongoSourceTask implements AutoCloseable {
         if (sourceConfig.getDlqTopic().isEmpty()) {
           return Optional.empty();
         }
+
+        // Retain only the specified fields for key and value
+        BsonDocument dlqKeyDoc = keyDocument != null ? retainFields(keyDocument, "fullDocument._id") : null;
+        BsonDocument dlqValueDoc = valueDocument != null ? retainFields(valueDocument, "_id") : null;
+
+        Object dlqKey = dlqKeyDoc != null ? dlqKeyDoc.toJson() : null;
+        Schema dlqKeySchema = dlqKeyDoc != null ? Schema.STRING_SCHEMA : null;
+
+        Object dlqValue = dlqValueDoc != null ? dlqValueDoc.toJson() : null;
+        Schema dlqValueSchema = dlqValueDoc != null ? Schema.STRING_SCHEMA : null;
+
         return Optional.of(
             new SourceRecord(
                 partitionMap,
                 sourceOffset,
                 sourceConfig.getDlqTopic(),
-                Schema.STRING_SCHEMA,
-                keyDocument == null ? "" : keyDocument.toJson(),
-                Schema.STRING_SCHEMA,
-                valueDocument == null ? "" : valueDocument.toJson()));
+                dlqKeySchema,
+                dlqKey,
+                dlqValueSchema,
+                dlqValue
+            )
+        );
       }
       throw new DataException(errorMessage.get(), e);
     }
@@ -676,5 +689,47 @@ final class StartedMongoSourceTask implements AutoCloseable {
     } else {
       statisticsManager.currentStatistics().getRecordsAcknowledged().sample(1);
     }
+  }
+
+  /**
+   * Extracts a specific field from a BsonDocument.
+   *
+   * @param document The BsonDocument to extract from.
+   * @param fieldPath The path to the field (e.g., "fullDocument._id").
+   * @return The extracted field as a BsonDocument, or null if not found.
+   */
+  private BsonDocument extractField(BsonDocument document, String fieldPath) {
+    String[] parts = fieldPath.split("\\.");
+    BsonDocument current = document;
+    for (int i = 0; i < parts.length - 1; i++) {
+      if (current == null || !current.containsKey(parts[i])) {
+        return null;
+      }
+      current = current.getDocument(parts[i]);
+    }
+    if (current == null || !current.containsKey(parts[parts.length - 1])) {
+      return null;
+    }
+    BsonDocument result = new BsonDocument();
+    result.put(parts[parts.length - 1], current.get(parts[parts.length - 1]));
+    return result;
+  }
+
+  /**
+   * Creates a new BsonDocument with only the specified fields.
+   *
+   * @param document The original BsonDocument.
+   * @param fieldPaths The paths to the fields to retain.
+   * @return A new BsonDocument with only the specified fields.
+   */
+  private BsonDocument retainFields(BsonDocument document, String... fieldPaths) {
+    BsonDocument result = new BsonDocument();
+    for (String fieldPath : fieldPaths) {
+      BsonDocument field = extractField(document, fieldPath);
+      if (field != null) {
+        result.putAll(field);
+      }
+    }
+    return result;
   }
 }
