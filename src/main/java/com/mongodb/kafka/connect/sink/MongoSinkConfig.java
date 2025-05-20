@@ -31,11 +31,14 @@ import static java.util.Collections.singletonList;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Collections.unmodifiableMap;
 import static org.apache.kafka.common.config.ConfigDef.Width;
+import com.github.jcustenborder.kafka.connect.utils.RegexUtils;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -134,15 +137,33 @@ public class MongoSinkConfig extends AbstractConfig {
     // Process and validate overrides of regex values.
     if (topicsRegex.isPresent()) {
       Pattern topicRegex = topicsRegex.get();
+      long regexTimeoutDuration = 100L;
       originals.keySet().stream()
           .filter(k -> k.startsWith(TOPIC_OVERRIDE_PREFIX))
           .forEach(
               k -> {
                 String topic = k.substring(TOPIC_OVERRIDE_PREFIX.length()).split("\\.")[0];
-                if (!topicSinkConnectorConfigMap.containsKey(topic)
-                    && topicRegex.matcher(topic).matches()) {
-                  topicSinkConnectorConfigMap.put(
-                      topic, new MongoSinkTopicConfig(topic, originals));
+                if (!topicSinkConnectorConfigMap.containsKey(topic)) {
+                    try {
+                        if (RegexUtils.matches(topicRegex, topic, regexTimeoutDuration)) {
+                            topicSinkConnectorConfigMap.put(
+                                topic, new MongoSinkTopicConfig(topic, originals));
+                        }
+                    } catch (TimeoutException e) {
+                      String message = format(
+                          "Regex match operation timed out after %dms. "
+                          + "A topic in the '%s*' configuration is causing the timeout. "
+                          + "Please check your configurations.",
+                          regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                      throw new ConfigException(message);
+                    } catch (InterruptedException | ExecutionException e) {
+                      String message = format(
+                          "Error during topics.regex match: %s. "
+                          + "A topic in the '%s*' configuration is causing the timeout. "
+                          + "Please check your configurations.",
+                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                      throw new ConfigException(message);
+                    }
                 }
               });
     }
