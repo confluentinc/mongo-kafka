@@ -298,6 +298,43 @@ class MongoSinkConfigTest {
   }
 
   @Test
+  @DisplayName("test topic regex with overrides avoids CWE-1333 ReDOS")
+  void testTopicRegexWithOverridesReDOS() {
+    String safeRegex = "(a+)+";
+    String unsafeRegex = "(a+)+b";
+    
+    // Create a string that will definitely cause a timeout with the unsafe regex,
+    // but not with the safe regex
+    // The string contains only 'a's but the unsafe regex requires a 'b' at the end
+    // This will cause catastrophic backtracking.
+    StringBuilder input = new StringBuilder();
+    for (int i = 0; i < 1000000; i++) {
+      input.append("a");
+    }
+    String topicOverride = input.toString();
+
+    MongoSinkConfig cfg =
+        createSinkConfig(
+            format(
+                "{'%s': '%s', '%s': 'otherDB', '%s': 'coll2'}",
+                TOPICS_REGEX_CONFIG,
+                safeRegex,
+                createOverrideKey(topicOverride, DATABASE_CONFIG),
+                createOverrideKey(topicOverride, COLLECTION_CONFIG)));
+    assertPattern("(a+)+", cfg.getTopicRegex().orElse(EMPTY_PATTERN));
+    assertEquals("otherDB", cfg.getMongoSinkTopicConfig(topicOverride).getString(DATABASE_CONFIG));
+    assertEquals("coll2", cfg.getMongoSinkTopicConfig(topicOverride).getString(COLLECTION_CONFIG));
+    ConfigException exception = assertThrows(
+        ConfigException.class,
+        () ->
+            createSinkConfig(
+                format(
+                    "{'%s': '%s', '%s': 'made up'}",
+                    TOPICS_REGEX_CONFIG, unsafeRegex, createOverrideKey(topicOverride, KEY_PROJECTION_TYPE_CONFIG))));
+    assertTrue(exception.getMessage().contains("Regex match operation timed out after "));
+  }
+
+  @Test
   @DisplayName("test K/V projection with invalid projection type")
   void testProjectionWithInvalidProjectionTypes() {
     assertAll(

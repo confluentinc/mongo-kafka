@@ -52,6 +52,7 @@ extra.apply {
     set("mongodbDriverVersion", "[4.7,4.7.99)")
     set("kafkaVersion", "2.6.0")
     set("avroVersion", "1.9.2")
+    set("connectUtilsVersion", "1.1.0")
 
     // Testing dependencies
     set("junitJupiterVersion", "5.8.1")
@@ -63,7 +64,6 @@ extra.apply {
     set("confluentVersion", "6.0.1")
     set("scalaVersion", "2.13")
     set("curatorVersion", "2.9.0")
-    set("connectUtilsVersion", "0.4+")
 }
 
 val mongoDependencies: Configuration by configurations.creating
@@ -73,6 +73,7 @@ dependencies {
     implementation("org.apache.kafka:connect-api:${project.extra["kafkaVersion"]}")
     implementation("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     implementation("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    implementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
 

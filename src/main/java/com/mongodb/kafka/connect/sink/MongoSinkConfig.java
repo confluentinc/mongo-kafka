@@ -31,11 +31,14 @@ import static java.util.Collections.singletonList;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Collections.unmodifiableMap;
 import static org.apache.kafka.common.config.ConfigDef.Width;
+import com.github.jcustenborder.kafka.connect.utils.RegexUtils;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -62,12 +65,12 @@ public class MongoSinkConfig extends AbstractConfig {
   public static final String TOPICS_REGEX_CONFIG = "topics.regex";
   private static final String TOPICS_REGEX_DOC =
       "Regular expression giving topics to consume. "
-          + "Under the hood, the regex is compiled to a <code>java.util.regex.Pattern</code>. "
-          + "Only one of "
-          + TOPICS_CONFIG
-          + " or "
-          + TOPICS_REGEX_CONFIG
-          + " should be specified.";
+      + "Under the hood, the regex is compiled to a <code>java.util.regex.Pattern</code>. "
+      + "Only one of "
+      + TOPICS_CONFIG
+      + " or "
+      + TOPICS_REGEX_CONFIG
+      + " should be specified.";
   private static final String TOPICS_REGEX_DEFAULT = EMPTY_STRING;
   private static final String TOPICS_REGEX_DISPLAY = "Topics regex";
 
@@ -76,20 +79,20 @@ public class MongoSinkConfig extends AbstractConfig {
   private static final String CONNECTION_URI_DISPLAY = "MongoDB Connection URI";
   private static final String CONNECTION_URI_DOC =
       "The connection URI as supported by the official drivers. "
-          + "eg: ``mongodb://user@pass@locahost/``.";
+      + "eg: ``mongodb://user@pass@locahost/``.";
 
   public static final String TOPIC_OVERRIDE_CONFIG = "topic.override.%s.%s";
   private static final String TOPIC_OVERRIDE_DEFAULT = EMPTY_STRING;
   private static final String TOPIC_OVERRIDE_DISPLAY = "Per topic configuration overrides.";
   public static final String TOPIC_OVERRIDE_DOC =
       "The overrides configuration allows for per topic customization of configuration. "
-          + "The customized overrides are merged with the default configuration, to create the specific configuration for a topic.\n"
-          + "For example, ``topic.override.foo.collection=bar`` will store data from the ``foo`` topic into the ``bar`` collection.\n"
-          + "Note: All configuration options apart from '"
-          + CONNECTION_URI_CONFIG
-          + "' and '"
-          + TOPICS_CONFIG
-          + "' are overridable.";
+      + "The customized overrides are merged with the default configuration, to create the specific configuration for a topic.\n"
+      + "For example, ``topic.override.foo.collection=bar`` will store data from the ``foo`` topic into the ``bar`` collection.\n"
+      + "Note: All configuration options apart from '"
+      + CONNECTION_URI_CONFIG
+      + "' and '"
+      + TOPICS_CONFIG
+      + "' are overridable.";
 
   static final String PROVIDER_CONFIG = "provider";
 
@@ -134,15 +137,33 @@ public class MongoSinkConfig extends AbstractConfig {
     // Process and validate overrides of regex values.
     if (topicsRegex.isPresent()) {
       Pattern topicRegex = topicsRegex.get();
+      long regexTimeoutDuration = 100L;
       originals.keySet().stream()
           .filter(k -> k.startsWith(TOPIC_OVERRIDE_PREFIX))
           .forEach(
               k -> {
                 String topic = k.substring(TOPIC_OVERRIDE_PREFIX.length()).split("\\.")[0];
-                if (!topicSinkConnectorConfigMap.containsKey(topic)
-                    && topicRegex.matcher(topic).matches()) {
-                  topicSinkConnectorConfigMap.put(
-                      topic, new MongoSinkTopicConfig(topic, originals));
+                if (!topicSinkConnectorConfigMap.containsKey(topic)) {
+                    try {
+                        if (RegexUtils.matches(topicRegex, topic, regexTimeoutDuration)) {
+                            topicSinkConnectorConfigMap.put(
+                                topic, new MongoSinkTopicConfig(topic, originals));
+                        }
+                    } catch (TimeoutException e) {
+                      String message = format(
+                          "Regex match operation timed out after %dms. "
+                          + "A topic in the '%s*' configuration is causing the timeout. "
+                          + "Please check your configurations.",
+                          regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                      throw new ConfigException(message);
+                    } catch (InterruptedException | ExecutionException e) {
+                      String message = format(
+                          "Error during topics.regex match: %s. "
+                          + "A topic in the '%s*' configuration is causing the timeout. "
+                          + "Please check your configurations.",
+                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                      throw new ConfigException(message);
+                    }
                 }
               });
     }
@@ -200,51 +221,51 @@ public class MongoSinkConfig extends AbstractConfig {
     ConfigDef configDef =
         new ConfigDef() {
 
-          @Override
-          @SuppressWarnings("unchecked")
-          public Map<String, ConfigValue> validateAll(final Map<String, String> props) {
-            logObsoleteProperties(props.keySet(), LOGGER::warn);
-            logIncompatibleProperties(props, LOGGER::warn);
-            Map<String, ConfigValue> results = super.validateAll(props);
-            INVISIBLE_CONFIGS.forEach(
-                c -> {
-                  if (results.containsKey(c)) {
-                    results.get(c).visible(false);
-                  }
-                });
-            // Don't validate child configs if the top level configs are broken
-            if (results.values().stream().anyMatch((c) -> !c.errorMessages().isEmpty())) {
-              return results;
-            }
+      @Override
+      @SuppressWarnings("unchecked")
+      public Map<String, ConfigValue> validateAll(final Map<String, String> props) {
+        logObsoleteProperties(props.keySet(), LOGGER::warn);
+        logIncompatibleProperties(props, LOGGER::warn);
+        Map<String, ConfigValue> results = super.validateAll(props);
+        INVISIBLE_CONFIGS.forEach(
+            c -> {
+              if (results.containsKey(c)) {
+                results.get(c).visible(false);
+              }
+            });
+        // Don't validate child configs if the top level configs are broken
+        if (results.values().stream().anyMatch((c) -> !c.errorMessages().isEmpty())) {
+          return results;
+        }
 
-            boolean hasTopicsConfig = !props.getOrDefault(TOPICS_CONFIG, "").trim().isEmpty();
+        boolean hasTopicsConfig = !props.getOrDefault(TOPICS_CONFIG, "").trim().isEmpty();
             boolean hasTopicsRegexConfig =
                 !props.getOrDefault(TOPICS_REGEX_CONFIG, "").trim().isEmpty();
 
-            if (hasTopicsConfig && hasTopicsRegexConfig) {
-              results
-                  .get(TOPICS_CONFIG)
-                  .addErrorMessage(
-                      format(
-                          "%s and %s are mutually exclusive options, but both are set.",
-                          TOPICS_CONFIG, TOPICS_REGEX_CONFIG));
-            } else if (!hasTopicsConfig && !hasTopicsRegexConfig) {
-              results
-                  .get(TOPICS_CONFIG)
-                  .addErrorMessage(
-                      format("Must configure one of %s or %s", TOPICS_CONFIG, TOPICS_REGEX_CONFIG));
-            }
+        if (hasTopicsConfig && hasTopicsRegexConfig) {
+          results
+              .get(TOPICS_CONFIG)
+              .addErrorMessage(
+                  format(
+                      "%s and %s are mutually exclusive options, but both are set.",
+                      TOPICS_CONFIG, TOPICS_REGEX_CONFIG));
+        } else if (!hasTopicsConfig && !hasTopicsRegexConfig) {
+          results
+              .get(TOPICS_CONFIG)
+              .addErrorMessage(
+                  format("Must configure one of %s or %s", TOPICS_CONFIG, TOPICS_REGEX_CONFIG));
+        }
 
-            if (hasTopicsConfig) {
-              List<String> topics = (List<String>) results.get(TOPICS_CONFIG).value();
-              topics.forEach(
-                  topic -> results.putAll(MongoSinkTopicConfig.validateAll(topic, props)));
-            } else if (hasTopicsRegexConfig) {
-              results.putAll(MongoSinkTopicConfig.validateRegexAll(props));
-            }
-            return results;
-          }
-        };
+        if (hasTopicsConfig) {
+          List<String> topics = (List<String>) results.get(TOPICS_CONFIG).value();
+          topics.forEach(
+              topic -> results.putAll(MongoSinkTopicConfig.validateAll(topic, props)));
+        } else if (hasTopicsRegexConfig) {
+          results.putAll(MongoSinkTopicConfig.validateRegexAll(props));
+        }
+        return results;
+      }
+    };
     String group = "Connection";
     int orderInGroup = 0;
     configDef.define(
