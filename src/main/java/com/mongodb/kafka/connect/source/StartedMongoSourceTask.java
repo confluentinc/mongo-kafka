@@ -26,6 +26,7 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_MAX_BATCH_SIZE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PUBLISH_FULL_DOCUMENT_ONLY_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PUBLISH_FULL_DOCUMENT_ONLY_TOMBSTONE_ON_DELETE_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.REMOVE_FIELD_ON_SCHEMA_MISMATCH_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.StartupConfig.StartupMode.COPY_EXISTING;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.StartupConfig.StartupMode.TIMESTAMP;
 import static com.mongodb.kafka.connect.source.MongoSourceTask.COPY_KEY;
@@ -290,6 +291,9 @@ final class StartedMongoSourceTask implements AutoCloseable {
       @Nullable final BsonDocument valueDocument) {
 
     try {
+      if (!sourceConfig.getBoolean(REMOVE_FIELD_ON_SCHEMA_MISMATCH_CONFIG)) {
+        valueSchemaAndValueProducer.checkForExtraFields(valueDocument);
+      }
       SchemaAndValue keySchemaAndValue = keySchemaAndValueProducer.get(keyDocument);
       SchemaAndValue valueSchemaAndValue = valueSchemaAndValueProducer.get(valueDocument);
       return Optional.of(
