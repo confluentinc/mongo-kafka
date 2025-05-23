@@ -28,6 +28,8 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import java.math.BigDecimal;
 import java.util.Base64;
@@ -39,6 +41,8 @@ import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.data.SchemaBuilder;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.data.Timestamp;
+import org.apache.kafka.connect.errors.DataException;
+import org.bson.BsonInt32;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -147,6 +151,92 @@ public class SchemaAndValueProducerTest {
         new AvroSchemaAndValueProducer(DEFAULT_AVRO_VALUE_SCHEMA, EXTENDED_JSON_WRITER_SETTINGS);
     assertSchemaAndValueEquals(
         expectedExtendedValue, extendedJsonValueProducer.get(CHANGE_STREAM_DOCUMENT));
+  }
+
+  @Test
+  @DisplayName("test for extra fields")
+  void testForExtraFields() {
+    String complexJsonSchema = "{"
+        + "\"type\": \"record\","
+        + "\"name\": \"ComplexRecord\","
+        + "\"fields\": ["
+        + "  {"
+        + "    \"name\": \"nestedDocument\","
+        + "    \"type\": {"
+        + "      \"type\": \"record\","
+        + "      \"name\": \"NestedDocument\","
+        + "      \"fields\": ["
+        + "        {\"name\": \"field1\", \"type\": \"string\"},"
+        + "        {\"name\": \"field2\", \"type\": \"int\"}"
+        + "      ]"
+        + "    }"
+        + "  },"
+        + "  {"
+        + "    \"name\": \"arrayWithDocuments\","
+        + "    \"type\": {"
+        + "      \"type\": \"array\","
+        + "      \"items\": {"
+        + "        \"type\": \"record\","
+        + "        \"name\": \"ArrayItem\","
+        + "        \"fields\": ["
+        + "          {\"name\": \"itemField1\", \"type\": \"string\"},"
+        + "          {\"name\": \"itemField2\", \"type\": \"boolean\"}"
+        + "        ]"
+        + "      }"
+        + "    }"
+        + "  }"
+        + "]"
+        + "}";
+
+    String complexJsonValue = "{\n" +
+        "  \"nestedDocument\": {\n" +
+        "    \"field1\": \"example string\",\n" +
+        "    \"field2\": 123\n" +
+        "  },\n" +
+        "  \"arrayWithDocuments\": [\n" +
+        "    {\n" +
+        "      \"itemField1\": \"item1\",\n" +
+        "      \"itemField2\": true\n" +
+        "    },\n" +
+        "    {\n" +
+        "      \"itemField1\": \"item2\",\n" +
+        "      \"itemField2\": false\n" +
+        "    }\n" +
+        "  ]\n" +
+        "}";
+
+    BsonDocument fullDocument = BsonDocument.parse(complexJsonValue);
+
+    SchemaAndValueProducer inferSchemaAndValueProducer =
+        new InferSchemaAndValueProducer(SIMPLE_JSON_WRITER_SETTINGS);
+    assertDoesNotThrow(
+        () -> inferSchemaAndValueProducer.checkForExtraFields(fullDocument));
+
+    SchemaAndValueProducer avroSchemaAndValueProducer =
+        new AvroSchemaAndValueProducer(complexJsonSchema, SIMPLE_JSON_WRITER_SETTINGS);
+    assertDoesNotThrow(
+        () -> avroSchemaAndValueProducer.checkForExtraFields(fullDocument));
+
+    fullDocument.get("arrayWithDocuments").asArray().get(1).asDocument().append("extraField", new BsonInt32(1));
+    assertThrows(
+        DataException.class,
+        () -> avroSchemaAndValueProducer.checkForExtraFields(fullDocument));
+    fullDocument.get("arrayWithDocuments").asArray().get(1).asDocument().remove("extraField");
+
+    fullDocument.get("nestedDocument").asDocument().append("extraField", new BsonInt32(1));
+    assertThrows(
+        DataException.class,
+        () -> avroSchemaAndValueProducer.checkForExtraFields(fullDocument));
+    fullDocument.get("nestedDocument").asDocument().remove("extraField");
+
+    fullDocument.append("extraField", new BsonInt32(1));
+    assertThrows(
+        DataException.class,
+        () -> avroSchemaAndValueProducer.checkForExtraFields(fullDocument));
+    fullDocument.remove("extraField");
+
+    assertDoesNotThrow(
+        () -> avroSchemaAndValueProducer.checkForExtraFields(fullDocument));
   }
 
   @Test
