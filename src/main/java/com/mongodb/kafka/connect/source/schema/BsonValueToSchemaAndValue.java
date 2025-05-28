@@ -298,7 +298,7 @@ public class BsonValueToSchemaAndValue {
           (key, value) -> {
             Field field = schema.field(key);
             if (field == null) {
-              throw extraFieldException(key, doc);
+              throw extraFieldException(key);
             }
             checkForExtraFields(field.schema(), value);
           }
@@ -346,8 +346,7 @@ public class BsonValueToSchemaAndValue {
     return new DataException(format("Missing field '%s'", field.name()));
   }
 
-  private DataException extraFieldException(final String key, final BsonDocument value) {
-    return new DataException(
-        format("Extra field '%s' in: '%s'", key, value.toJson(jsonWriterSettings)));
+  private DataException extraFieldException(final String key) {
+    return new DataException(format("The field '%s' is not defined in the Schema.", key));
   }
 }
