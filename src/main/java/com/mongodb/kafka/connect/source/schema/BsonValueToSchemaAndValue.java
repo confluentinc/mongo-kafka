@@ -60,6 +60,7 @@ import org.bson.codecs.Codec;
 import org.bson.codecs.EncoderContext;
 import org.bson.io.BasicOutputBuffer;
 import org.bson.json.JsonWriterSettings;
+import org.bson.BsonArray;
 
 public class BsonValueToSchemaAndValue {
   private static final Codec<BsonValue> BSON_VALUE_CODEC = new BsonValueCodec();
@@ -287,6 +288,38 @@ public class BsonValueToSchemaAndValue {
     return new SchemaAndValue(schema, structValue);
   }
 
+  public void checkForExtraFields(final Schema schema, final BsonValue bsonValue) {
+    if (schema.isOptional() && bsonValue.isNull()) {
+      return;
+    }
+    if (schema.type() == Type.STRUCT && bsonValue.isDocument()) {
+      BsonDocument doc = bsonValue.asDocument();
+      doc.forEach(
+          (key, value) -> {
+            Field field = schema.field(key);
+            if (field == null) {
+              throw extraFieldException(key);
+            }
+            checkForExtraFields(field.schema(), value);
+          }
+      );
+    } else if (schema.type() == Type.ARRAY && bsonValue.isArray()) {
+      BsonArray array = bsonValue.asArray();
+      array.forEach(
+          value -> {
+            checkForExtraFields(schema.valueSchema(), value);
+          }
+      );
+    } else if (schema.type() == Type.MAP && bsonValue.isDocument()) {
+      BsonDocument doc = bsonValue.asDocument();
+      doc.forEach(
+          (key, value) -> {
+            checkForExtraFields(schema.valueSchema(), value);
+          }
+      );
+    }
+  }
+
   private SchemaAndValue booleanToSchemaAndValue(final Schema schema, final BsonValue bsonValue) {
     if (!bsonValue.isBoolean()) {
       throw unexpectedBsonValueType(Schema.Type.BOOLEAN, bsonValue);
@@ -311,5 +344,9 @@ public class BsonValueToSchemaAndValue {
 
   private DataException missingFieldException(final Field field, final BsonDocument value) {
     return new DataException(format("Missing field '%s'", field.name()));
+  }
+
+  private DataException extraFieldException(final String key) {
+    return new DataException(format("The field '%s' is not defined in the Schema.", key));
   }
 }
