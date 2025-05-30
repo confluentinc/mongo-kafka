@@ -549,6 +549,16 @@ public class MongoSourceConfig extends AbstractConfig {
   public static final String OVERRIDE_ERRORS_TOLERANCE_DOC =
       "Use this property if you would like to configure the connector's error handling behavior differently from the Connect framework's.";
 
+  public static final String REMOVE_FIELD_ON_SCHEMA_MISMATCH_CONFIG = "remove.field.on.schema.mismatch";
+  public static final boolean REMOVE_FIELD_ON_SCHEMA_MISMATCH_DEFAULT = true;
+  private static final String REMOVE_FIELD_ON_SCHEMA_MISMATCH_DOC =
+      "If true, remove fields from the document that are not present in the schema. "
+          + "Otherwise, throw an error or send the documents to the DLQ depending on the value of "
+          + ERRORS_TOLERANCE_CONFIG
+          + " being set to ALL or NONE respectively.";
+  private static final String REMOVE_FIELD_ON_SCHEMA_MISMATCH_DISPLAY =
+      "Remove Field on Schema Mismatch";
+
   public static final String ERRORS_LOG_ENABLE_CONFIG = "errors.log.enable";
   public static final String ERRORS_LOG_ENABLE_DISPLAY = "Log Errors";
   public static final boolean ERRORS_LOG_ENABLE_DEFAULT = false;
@@ -1486,6 +1496,18 @@ public class MongoSourceConfig extends AbstractConfig {
         ++orderInGroup,
         Width.SHORT,
         ERRORS_TOLERANCE_DISPLAY);
+
+    configDef.define(
+        REMOVE_FIELD_ON_SCHEMA_MISMATCH_CONFIG,
+        Type.BOOLEAN,
+        REMOVE_FIELD_ON_SCHEMA_MISMATCH_DEFAULT,
+        Importance.MEDIUM,
+        REMOVE_FIELD_ON_SCHEMA_MISMATCH_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        REMOVE_FIELD_ON_SCHEMA_MISMATCH_DISPLAY
+    );
 
     configDef.define(
         ERRORS_LOG_ENABLE_CONFIG,
