@@ -63,7 +63,7 @@ extra.apply {
     set("confluentVersion", "6.0.1")
     set("scalaVersion", "2.13")
     set("curatorVersion", "2.9.0")
-    set("connectUtilsVersion", "0.4+")
+    set("connectUtilsVersion", "1.1.0")
 }
 
 val mongoDependencies: Configuration by configurations.creating
@@ -73,6 +73,7 @@ dependencies {
     implementation("org.apache.kafka:connect-api:${project.extra["kafkaVersion"]}")
     implementation("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     implementation("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    implementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
 
@@ -89,7 +90,6 @@ dependencies {
 
     // Integration Tests
     testImplementation("org.apache.curator:curator-test:${project.extra["curatorVersion"]}")
-    testImplementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
     testImplementation(platform("io.confluent:kafka-schema-registry-parent:${project.extra["confluentVersion"]}"))
     testImplementation(group = "com.google.guava", name = "guava")
     testImplementation(group = "io.confluent", name = "kafka-schema-registry")
