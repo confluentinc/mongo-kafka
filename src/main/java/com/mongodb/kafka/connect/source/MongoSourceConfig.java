@@ -448,6 +448,14 @@ public class MongoSourceConfig extends AbstractConfig {
           + "\nIt is an equivalent replacement for the deprecated 'copy.existing.namespace.regex'.";
   static final String STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_DEFAULT = EMPTY_STRING;
 
+  public static final String REGEX_TIMEOUT_MS = "regex.timeout.ms";
+  public static final long REGEX_TIMEOUT_MS_DEFAULT = 1000L;
+  private static final String REGEX_TIMEOUT_MS_DOC =
+      "Timeout in milliseconds for any regex operation. This controls how long the connector will "
+          + "wait for regex pattern compilation, matching, replacement, or any other regex-related "
+          + "operation to complete before timing out.";
+  private static final String REGEX_TIMEOUT_MS_DISPLAY = "Regex Timeout (ms)";
+
   static final String STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_CONFIG =
       "startup.mode.copy.existing.allow.disk.use";
   private static final String STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_DISPLAY =
@@ -1359,6 +1367,18 @@ public class MongoSourceConfig extends AbstractConfig {
         ++orderInGroup,
         Width.MEDIUM,
         STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_DISPLAY);
+
+    configDef.define(
+        REGEX_TIMEOUT_MS,
+        ConfigDef.Type.LONG,
+        REGEX_TIMEOUT_MS_DEFAULT,
+        ConfigDef.Range.atLeast(1),
+        ConfigDef.Importance.LOW,
+        REGEX_TIMEOUT_MS_DOC,
+        group,
+        ++orderInGroup,
+        ConfigDef.Width.SHORT,
+        REGEX_TIMEOUT_MS_DISPLAY);
 
     configDef.define(
         STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_CONFIG,
