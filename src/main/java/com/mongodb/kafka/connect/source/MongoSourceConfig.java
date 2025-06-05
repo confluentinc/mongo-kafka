@@ -449,7 +449,7 @@ public class MongoSourceConfig extends AbstractConfig {
   static final String STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_DEFAULT = EMPTY_STRING;
 
   public static final String REGEX_TIMEOUT_MS = "regex.timeout.ms";
-  public static final long REGEX_TIMEOUT_MS_DEFAULT = 1000L;
+  public static final long REGEX_TIMEOUT_MS_DEFAULT = 100L;
   private static final String REGEX_TIMEOUT_MS_DOC =
       "Timeout in milliseconds for any regex operation. This controls how long the connector will "
           + "wait for regex pattern compilation, matching, replacement, or any other regex-related "
