@@ -20,6 +20,7 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONF
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COPY_EXISTING_ALLOW_DISK_USE_DEFAULT;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PIPELINE_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.REGEX_TIMEOUT_MS;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG;
@@ -36,6 +37,8 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -48,10 +51,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import org.apache.kafka.connect.errors.ConnectException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -477,6 +482,52 @@ class MongoCopyDataManagerTest {
       sleep();
       copyExistingDataManager.poll();
     }
+  }
+
+  @Test
+  public void testRegexReplacementWithTimeout() {
+    StringBuilder input = new StringBuilder();
+    for (int i = 0; i < 10000; i++) {
+      input.append("a");
+    }
+    String inputString = input.toString();
+
+    Map<String, String> props = new HashMap<>();
+    props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+    props.put(DATABASE_CONFIG, inputString);
+    props.put(COLLECTION_CONFIG, inputString);
+    props.put(STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG, "(([a.]+)+)Z");
+    props.put(REGEX_TIMEOUT_MS, "100");
+    MongoSourceConfig sourceConfig = createSourceConfig(props);
+
+    ConnectException exception = assertThrows(ConnectException.class,
+        () -> new MongoCopyDataManager(sourceConfig, mongoClient));
+    assertInstanceOf(TimeoutException.class, exception.getCause());
+  }
+
+  @Test
+  public void testRegexReplacementWithInterruption() throws InterruptedException {
+    StringBuilder input = new StringBuilder();
+    for (int i = 0; i < 10000; i++) {
+      input.append("a");
+    }
+    String inputString = input.toString();
+
+    Map<String, String> props = new HashMap<>();
+    props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+    props.put(DATABASE_CONFIG, inputString);
+    props.put(COLLECTION_CONFIG, inputString);
+    props.put(STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG, "(([a.]+)+)Z");
+    MongoSourceConfig sourceConfig = createSourceConfig(props);
+
+    Thread copyDataManagerThread = new Thread(() -> {
+      ConnectException e = assertThrows(ConnectException.class, () -> new MongoCopyDataManager(sourceConfig, mongoClient));
+      assertInstanceOf(InterruptedException.class, e.getCause(), "Expected InterruptedException as cause");
+      assertTrue(Thread.currentThread().isInterrupted(), "Thread should be interrupted");
+    });
+    copyDataManagerThread.start();
+    copyDataManagerThread.interrupt();
+    copyDataManagerThread.join(2000);
   }
 
   private void sleep(final int millis) {
