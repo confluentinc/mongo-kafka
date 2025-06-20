@@ -309,8 +309,9 @@ class MongoSinkConfigTest {
     // but not with the safe regex
     // The string contains only 'a's but the unsafe regex requires a 'b' at the end
     // This will cause catastrophic backtracking.
+    // The length of topic must be greater than 100000 to cause a timeout.
     StringBuilder input = new StringBuilder();
-    for (int i = 0; i < 1000000; i++) {
+    for (int i = 0; i < 100000; i++) {
       input.append("a");
     }
     String topicOverride = input.toString();

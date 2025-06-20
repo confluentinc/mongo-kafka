@@ -78,11 +78,12 @@ public class MongoSinkConfig extends AbstractConfig {
   private static final String TOPICS_REGEX_DISPLAY = "Topics regex";
 
   public static final String REGEX_TIMEOUT_MS = "regex.timeout.ms";
-  public static final long REGEX_TIMEOUT_MS_DEFAULT = 100;
-  public static final String REGEX_TIMEOUT_MS_DOC =
-          "Timeout in milliseconds for regex pattern operations.";
-  public static final String REGEX_TIMEOUT_MS_DISPLAY =
-          "Regex Timeout(ms)";
+  public static final long REGEX_TIMEOUT_MS_DEFAULT = 100L;
+  private static final String REGEX_TIMEOUT_MS_DOC =
+      "Timeout in milliseconds for any regex operation. This controls how long the connector will "
+          + "wait for regex pattern compilation, matching, replacement, or any other regex-related "
+          + "operation to complete before timing out.";
+  private static final String REGEX_TIMEOUT_MS_DISPLAY = "Regex Timeout (ms)";
 
   public static final String CONNECTION_URI_CONFIG = "connection.uri";
   private static final String CONNECTION_URI_DEFAULT = "mongodb://localhost:27017";
@@ -323,6 +324,18 @@ public class MongoSinkConfig extends AbstractConfig {
         TOPICS_REGEX_DISPLAY);
 
     configDef.define(
+      REGEX_TIMEOUT_MS,
+      ConfigDef.Type.LONG,
+      REGEX_TIMEOUT_MS_DEFAULT,
+      ConfigDef.Range.atLeast(1),
+      ConfigDef.Importance.LOW,
+      REGEX_TIMEOUT_MS_DOC,
+      group,
+      ++orderInGroup,
+      ConfigDef.Width.SHORT,
+      REGEX_TIMEOUT_MS_DISPLAY);
+
+    configDef.define(
         CONNECTION_URI_CONFIG,
         Type.PASSWORD,
         CONNECTION_URI_DEFAULT,
@@ -352,7 +365,6 @@ public class MongoSinkConfig extends AbstractConfig {
         TOPIC_OVERRIDE_DISPLAY);
 
     configDef.defineInternal(PROVIDER_CONFIG, Type.STRING, "", Importance.LOW);
-    configDef.defineInternal(REGEX_TIMEOUT_MS, Type.LONG, REGEX_TIMEOUT_MS_DEFAULT, Importance.MEDIUM);
 
     MongoSinkTopicConfig.BASE_CONFIG.configKeys().values().forEach(configDef::define);
     return configDef;
