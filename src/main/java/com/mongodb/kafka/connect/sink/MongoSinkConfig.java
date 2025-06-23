@@ -166,22 +166,22 @@ public class MongoSinkConfig extends AbstractConfig {
                           "Regex match operation timed out after %dms. "
                           + "A topic in the %s* configuration is causing the timeout. "
                           + "Please check your configurations.",
-                          regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                          regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX);
                       throw new ConfigException(message);
                     } catch (InterruptedException e) {
                       Thread.currentThread().interrupt();
                       String message = format(
-                          "Thread was interrupted during topics.regex match: %s. "
+                          "Error during topics.regex match: %s. "
                           + "A topic in the %s* configuration is causing the timeout. "
                           + "Please check your configurations.",
-                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX);
                       throw new ConfigException(message);
                     } catch (ExecutionException e) {
                       String message = format(
                           "Error during topics.regex match: %s. "
                           + "A topic in the %s* configuration is causing the timeout. "
                           + "Please check your configurations.",
-                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX);
                       throw new ConfigException(message);
                     }
                 }
