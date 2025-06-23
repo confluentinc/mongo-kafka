@@ -33,11 +33,14 @@ import static java.util.Collections.singletonList;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Collections.unmodifiableMap;
 import static org.apache.kafka.common.config.ConfigDef.Width;
+import com.github.jcustenborder.kafka.connect.utils.RegexUtils;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -73,6 +76,14 @@ public class MongoSinkConfig extends AbstractConfig {
           + " should be specified.";
   private static final String TOPICS_REGEX_DEFAULT = EMPTY_STRING;
   private static final String TOPICS_REGEX_DISPLAY = "Topics regex";
+
+  public static final String REGEX_TIMEOUT_MS = "regex.timeout.ms";
+  public static final long REGEX_TIMEOUT_MS_DEFAULT = 100L;
+  private static final String REGEX_TIMEOUT_MS_DOC =
+      "Timeout in milliseconds for any regex operation. This controls how long the connector will "
+          + "wait for regex pattern compilation, matching, replacement, or any other regex-related "
+          + "operation to complete before timing out.";
+  private static final String REGEX_TIMEOUT_MS_DISPLAY = "Regex Timeout (ms)";
 
   public static final String CONNECTION_URI_CONFIG = "connection.uri";
   private static final String CONNECTION_URI_DEFAULT = "mongodb://localhost:27017";
@@ -138,15 +149,41 @@ public class MongoSinkConfig extends AbstractConfig {
     // Process and validate overrides of regex values.
     if (topicsRegex.isPresent()) {
       Pattern topicRegex = topicsRegex.get();
+      long regexTimeoutDuration = getLong(REGEX_TIMEOUT_MS);
       originals.keySet().stream()
           .filter(k -> k.startsWith(TOPIC_OVERRIDE_PREFIX))
           .forEach(
               k -> {
                 String topic = k.substring(TOPIC_OVERRIDE_PREFIX.length()).split("\\.")[0];
-                if (!topicSinkConnectorConfigMap.containsKey(topic)
-                    && topicRegex.matcher(topic).matches()) {
-                  topicSinkConnectorConfigMap.put(
-                      topic, new MongoSinkTopicConfig(topic, originals));
+                if (!topicSinkConnectorConfigMap.containsKey(topic)) {
+                    try {
+                        if (RegexUtils.matches(topicRegex, topic, regexTimeoutDuration)) {
+                            topicSinkConnectorConfigMap.put(
+                                topic, new MongoSinkTopicConfig(topic, originals));
+                        }
+                    } catch (TimeoutException e) {
+                      String message = format(
+                          "Regex match operation timed out after %dms. "
+                          + "A topic in the %s* configuration is causing the timeout. "
+                          + "Please check your configurations.",
+                          regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                      throw new ConfigException(message);
+                    } catch (InterruptedException e) {
+                      Thread.currentThread().interrupt();
+                      String message = format(
+                          "Thread was interrupted during topics.regex match: %s. "
+                          + "A topic in the %s* configuration is causing the timeout. "
+                          + "Please check your configurations.",
+                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                      throw new ConfigException(message);
+                    } catch (ExecutionException e) {
+                      String message = format(
+                          "Error during topics.regex match: %s. "
+                          + "A topic in the %s* configuration is causing the timeout. "
+                          + "Please check your configurations.",
+                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG, TOPIC_OVERRIDE_PREFIX);
+                      throw new ConfigException(message);
+                    }
                 }
               });
     }
@@ -183,6 +220,10 @@ public class MongoSinkConfig extends AbstractConfig {
 
   public Map<String, String> getOriginals() {
     return originals;
+  }
+
+  public long getRegexTimeoutMs() {
+    return getLong(REGEX_TIMEOUT_MS);
   }
 
   public MongoSinkTopicConfig getMongoSinkTopicConfig(final String topic) {
@@ -281,6 +322,18 @@ public class MongoSinkConfig extends AbstractConfig {
         ++orderInGroup,
         Width.MEDIUM,
         TOPICS_REGEX_DISPLAY);
+
+    configDef.define(
+      REGEX_TIMEOUT_MS,
+      ConfigDef.Type.LONG,
+      REGEX_TIMEOUT_MS_DEFAULT,
+      ConfigDef.Range.atLeast(1),
+      ConfigDef.Importance.LOW,
+      REGEX_TIMEOUT_MS_DOC,
+      group,
+      ++orderInGroup,
+      ConfigDef.Width.SHORT,
+      REGEX_TIMEOUT_MS_DISPLAY);
 
     configDef.define(
         CONNECTION_URI_CONFIG,
