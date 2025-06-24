@@ -105,6 +105,16 @@ public class MongoSinkConfig extends AbstractConfig {
           + TOPICS_CONFIG
           + "' are overridable.";
 
+  private static final String TOPIC_OVERRIDE_REGEX_TIMEOUT_ERROR_MESSAGE =
+      "Regex match operation timed out after %dms. "
+          + "A topic in one of the %s* configurations is causing the timeout when matching against %s. "
+          + "Please check your configurations.";
+
+  private static final String TOPIC_OVERRIDE_REGEX_ERROR_MESSAGE =
+      "Error during regex match: %s. "
+          + "A topic in one of the %s* configurations is causing an error when matching against %s. "
+          + "Please check your configurations.";
+
   static final String PROVIDER_CONFIG = "provider";
 
   private static final List<String> INVISIBLE_CONFIGS = singletonList(TOPIC_OVERRIDE_CONFIG);
@@ -163,25 +173,19 @@ public class MongoSinkConfig extends AbstractConfig {
                         }
                     } catch (TimeoutException e) {
                       String message = format(
-                          "Regex match operation timed out after %dms. "
-                          + "A topic in the %s* configuration is causing the timeout. "
-                          + "Please check your configurations.",
-                          regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX);
+                          TOPIC_OVERRIDE_REGEX_TIMEOUT_ERROR_MESSAGE, regexTimeoutDuration,
+                          TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG);
                       throw new ConfigException(message);
                     } catch (InterruptedException e) {
                       Thread.currentThread().interrupt();
                       String message = format(
-                          "Error during topics.regex match: %s. "
-                          + "A topic in the %s* configuration is causing the timeout. "
-                          + "Please check your configurations.",
-                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX);
+                          TOPIC_OVERRIDE_REGEX_ERROR_MESSAGE, e.getMessage(),
+                          TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG);
                       throw new ConfigException(message);
                     } catch (ExecutionException e) {
                       String message = format(
-                          "Error during topics.regex match: %s. "
-                          + "A topic in the %s* configuration is causing the timeout. "
-                          + "Please check your configurations.",
-                          e, regexTimeoutDuration, TOPIC_OVERRIDE_PREFIX);
+                          TOPIC_OVERRIDE_REGEX_ERROR_MESSAGE, e.getMessage(),
+                          TOPIC_OVERRIDE_PREFIX, TOPICS_REGEX_CONFIG);
                       throw new ConfigException(message);
                     }
                 }
