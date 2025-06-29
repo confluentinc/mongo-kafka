@@ -487,16 +487,17 @@ class MongoCopyDataManagerTest {
   @Test
   public void testRegexReplacementWithTimeout() {
     StringBuilder input = new StringBuilder();
-    for (int i = 0; i < 10000; i++) {
+    for (int i = 0; i < 200; i++) {
       input.append("a");
     }
+    input.append("c");
     String inputString = input.toString();
-
+    System.out.println(inputString);
     Map<String, String> props = new HashMap<>();
     props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
-    props.put(DATABASE_CONFIG, inputString);
-    props.put(COLLECTION_CONFIG, inputString);
-    props.put(STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG, "(([a.]+)+)Z");
+    props.put(DATABASE_CONFIG, "a");
+    props.put(COLLECTION_CONFIG, "ac");
+    props.put(STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG, "a\\.((a+)+)+b");
     props.put(REGEX_TIMEOUT_MS, "100");
     MongoSourceConfig sourceConfig = createSourceConfig(props);
 

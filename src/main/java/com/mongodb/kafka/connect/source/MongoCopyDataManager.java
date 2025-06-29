@@ -99,9 +99,10 @@ class MongoCopyDataManager implements AutoCloseable {
   MongoCopyDataManager(final MongoSourceConfig sourceConfig, final MongoClient mongoClient) {
     this.sourceConfig = sourceConfig;
     this.mongoClient = mongoClient;
-
+    long now = System.currentTimeMillis();
+    LOGGER.info("Selecting namespaces to copy existing data from");
     List<MongoNamespace> namespaces = selectNamespaces(sourceConfig, mongoClient);
-
+    LOGGER.info("time taken to select namespaces: {}ms", (System.currentTimeMillis() - now));
     LOGGER.info("Copying existing data on the following namespaces: {}", namespaces);
     namespacesToCopy = new AtomicInteger(namespaces.size());
     CopyExistingConfig copyConfig = sourceConfig.getStartupConfig().copyExistingConfig();
@@ -168,7 +169,7 @@ class MongoCopyDataManager implements AutoCloseable {
     String database = sourceConfig.getString(DATABASE_CONFIG);
     String collection = sourceConfig.getString(COLLECTION_CONFIG);
     String namespacesRegex = sourceConfig.getStartupConfig().copyExistingConfig().namespaceRegex();
-
+    LOGGER.info("Selecting namespaces with database: {}, collection: {}, regex: {}", database, collection, namespacesRegex);
     List<MongoNamespace> namespaces;
     if (database.isEmpty()) {
       namespaces = getCollections(mongoClient);
@@ -177,26 +178,33 @@ class MongoCopyDataManager implements AutoCloseable {
     } else {
       namespaces = singletonList(createNamespace(database, collection));
     }
-
+    LOGGER.info("Found {} namespaces to copy", namespaces);
     if (!namespacesRegex.isEmpty()) {
       Pattern pattern = Pattern.compile(namespacesRegex);
       long regexTimeout = sourceConfig.getLong(REGEX_TIMEOUT_MS);
+      LOGGER.info(
+          "Filtering namespaces with pattern: {} with timeout: {} ms", pattern, regexTimeout);
       namespaces =
           namespaces.stream().filter(n -> {
             try {
+              LOGGER.info("Checking namespace {} against pattern {} with timeout {} ms", n.getFullName(), pattern, regexTimeout);
               return RegexUtils.find(pattern, n.getFullName(), regexTimeout);
             } catch (TimeoutException e) {
+              LOGGER.error("Regex find operation timed out after {} ms for namespace {}", regexTimeout, n.getFullName(), e);
               throw new ConnectException(
-                  "Regex replacement operation timed out after " + regexTimeout + "ms", e);
+                  "Regex find operation timed out after " + regexTimeout + "ms", e);
             } catch (InterruptedException e) {
+              LOGGER.error("Thread was interrupted during regex find operation for namespace {}", n.getFullName(), e);
               Thread.currentThread().interrupt();
-              throw new ConnectException("Thread was interrupted during regex replacement", e);
+              throw new ConnectException("Thread was interrupted during regex find operation", e);
             } catch (ExecutionException e) {
-              throw new ConnectException("Error during regex replacement", e);
+              LOGGER.error("Error during regex find operation for namespace {}", n.getFullName(), e);
+              throw new ConnectException("Error during regex find operation", e);
             }
           }).collect(toList());
+      LOGGER.info("Filtered namespaces: {}", namespaces);
     }
-
+    LOGGER.info("THE END...");
     return namespaces;
   }
 

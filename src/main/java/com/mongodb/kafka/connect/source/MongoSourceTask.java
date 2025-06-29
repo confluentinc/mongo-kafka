@@ -147,8 +147,9 @@ public final class MongoSourceTask extends SourceTask {
           MongoClients.create(
               builder.build(),
               getMongoDriverInformation(CONNECTOR_TYPE, sourceConfig.getString(PROVIDER_CONFIG)));
+      LOGGER.info("shouldCopyData: {}", shouldCopyData);
       copyDataManager = shouldCopyData ? new MongoCopyDataManager(sourceConfig, mongoClient) : null;
-
+      LOGGER.info("Started task");
       startedTask =
           new StartedMongoSourceTask(
               // It is safer to read the `context` reference each time we need it
