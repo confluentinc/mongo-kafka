@@ -76,9 +76,11 @@ dependencies {
     implementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
+    mongoDependencies("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoAndAvroDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     mongoAndAvroDependencies("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    mongoAndAvroDependencies("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     // Unit Tests
     testImplementation(platform("org.junit:junit-bom:${project.extra["junitJupiterVersion"]}"))
