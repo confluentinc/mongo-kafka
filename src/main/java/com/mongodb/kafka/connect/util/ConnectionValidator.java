@@ -140,13 +140,9 @@ public final class ConnectionValidator {
           if (!latch.await(latchTimeout, TimeUnit.MILLISECONDS)) {
             configValue.addErrorMessage("Unable to connect to the server.");
             mongoClient.close();
-          } else {
-            mongoClient.close();
           }
-        } else {
-          configValue.addErrorMessage("Non-SRV protocol host is not supported");
-          mongoClient.close();
         }
+        mongoClient.close();
       } catch (InterruptedException e) {
         mongoClient.close();
         throw new ConnectException(e);
