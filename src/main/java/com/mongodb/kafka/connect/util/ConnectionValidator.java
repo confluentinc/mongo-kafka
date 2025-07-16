@@ -138,11 +138,11 @@ public final class ConnectionValidator {
       try {
           if (!latch.await(latchTimeout, TimeUnit.MILLISECONDS)) {
             configValue.addErrorMessage("Unable to connect to the server.");
+            mongoClient.close();
           }
       } catch (InterruptedException e) {
+        mongoClient.close();
         throw new ConnectException(e);
-      } finally {
-        mongoClient.close();;
       }
 
       if (configValue.errorMessages().isEmpty()) {
