@@ -136,16 +136,13 @@ public final class ConnectionValidator {
       MongoClient mongoClient = MongoClients.create(mongoClientSettings);
 
       try {
-        if (connectionString.isSrvProtocol()) {
           if (!latch.await(latchTimeout, TimeUnit.MILLISECONDS)) {
             configValue.addErrorMessage("Unable to connect to the server.");
-            mongoClient.close();
           }
-        }
-        mongoClient.close();
       } catch (InterruptedException e) {
-        mongoClient.close();
         throw new ConnectException(e);
+      } finally {
+        mongoClient.close();;
       }
 
       if (configValue.errorMessages().isEmpty()) {
