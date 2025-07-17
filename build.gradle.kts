@@ -52,6 +52,7 @@ extra.apply {
     set("mongodbDriverVersion", "[4.7,4.7.99]")
     set("kafkaVersion", "2.6.0")
     set("avroVersion", "1.9.2")
+    set("connectUtilsVersion", "1.1.0")
 
     // Testing dependencies
     set("junitJupiterVersion", "5.8.1")
@@ -63,7 +64,6 @@ extra.apply {
     set("confluentVersion", "6.0.1")
     set("scalaVersion", "2.13")
     set("curatorVersion", "2.9.0")
-    set("connectUtilsVersion", "0.4+")
 }
 
 val mongoDependencies: Configuration by configurations.creating
@@ -73,11 +73,14 @@ dependencies {
     implementation("org.apache.kafka:connect-api:${project.extra["kafkaVersion"]}")
     implementation("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     implementation("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    implementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
+    mongoDependencies("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoAndAvroDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     mongoAndAvroDependencies("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    mongoAndAvroDependencies("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     // Unit Tests
     testImplementation(platform("org.junit:junit-bom:${project.extra["junitJupiterVersion"]}"))
@@ -89,7 +92,6 @@ dependencies {
 
     // Integration Tests
     testImplementation("org.apache.curator:curator-test:${project.extra["curatorVersion"]}")
-    testImplementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
     testImplementation(platform("io.confluent:kafka-schema-registry-parent:${project.extra["confluentVersion"]}"))
     testImplementation(group = "com.google.guava", name = "guava")
     testImplementation(group = "io.confluent", name = "kafka-schema-registry")
@@ -226,32 +228,6 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     enabled = baseName.equals("main")
     reports.maybeCreate("html").isEnabled = !project.hasProperty("xmlReports.enabled")
     reports.maybeCreate("xml").isEnabled = project.hasProperty("xmlReports.enabled")
-}
-
-// Spotless is used to lint and reformat source files.
-spotless {
-    java {
-        googleJavaFormat("1.12.0")
-        importOrder("java", "io", "org", "org.bson", "com.mongodb", "com.mongodb.kafka", "")
-        removeUnusedImports() // removes any unused imports
-        trimTrailingWhitespace()
-        endWithNewline()
-        indentWithSpaces()
-    }
-
-    kotlinGradle {
-        ktlint("0.31.0")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-
-    format("extraneous") {
-        target("*.xml", "*.yml", "*.md")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
 }
 
 tasks.named("compileJava") {

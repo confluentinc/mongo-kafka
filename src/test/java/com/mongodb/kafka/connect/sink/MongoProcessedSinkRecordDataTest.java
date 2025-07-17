@@ -70,6 +70,9 @@ class MongoProcessedSinkRecordDataTest {
       new SinkRecord(
           TEST_TOPIC, 0, Schema.STRING_SCHEMA, "{_id: 1}", Schema.STRING_SCHEMA, VALUE_JSON, 1);
 
+  private static final SinkRecord TOMBSTONE_SINK_RECORD =
+      new SinkRecord(TEST_TOPIC, 0, Schema.STRING_SCHEMA, "{_id: 1}", null, null, 1);
+
   private static final SinkRecord INVALID_SINK_RECORD =
       new SinkRecord(TEST_TOPIC, 0, Schema.INT32_SCHEMA, 1, Schema.INT32_SCHEMA, 1, 1);
 
@@ -104,6 +107,16 @@ class MongoProcessedSinkRecordDataTest {
 
     assertEquals(new MongoNamespace("myDB.myColl"), processedData.getNamespace());
     assertWriteModel(processedData);
+  }
+
+  @Test
+  @DisplayName("test default processing tombstone record")
+  void testDefaultProcessingTombstone() {
+    MongoProcessedSinkRecordData processedData =
+        new MongoProcessedSinkRecordData(TOMBSTONE_SINK_RECORD, createSinkConfig());
+
+    assertEquals(new MongoNamespace("myDB.topic"), processedData.getNamespace());
+    assertNull(processedData.getWriteModel());
   }
 
   @Test
