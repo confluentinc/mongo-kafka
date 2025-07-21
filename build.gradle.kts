@@ -68,7 +68,6 @@ extra.apply {
     set("avroVersion", "1.12.0")
 }
 
-val mongoDependencies: Configuration by configurations.creating
 val mongoAndAvroDependencies: Configuration by configurations.creating
 
 dependencies {
@@ -76,9 +75,6 @@ dependencies {
     implementation("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     implementation("org.apache.avro:avro:${project.extra["avroVersion"]}")
     implementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
-
-    mongoDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
-    mongoDependencies("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoAndAvroDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     mongoAndAvroDependencies("org.apache.avro:avro:${project.extra["avroVersion"]}")
@@ -249,7 +245,7 @@ tasks.named("compileJava") {
  */
 tasks.register<ShadowJar>("confluentJar") {
     archiveClassifier.set("confluent")
-    from(mongoDependencies, sourceSets.main.get().output)
+    from(mongoAndAvroDependencies, sourceSets.main.get().output)
 }
 
 tasks.register<ShadowJar>("allJar") {
