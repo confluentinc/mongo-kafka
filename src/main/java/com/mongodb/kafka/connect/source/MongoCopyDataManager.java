@@ -17,6 +17,7 @@ package com.mongodb.kafka.connect.source;
 
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.REGEX_TIMEOUT_MS;
 import static java.lang.String.format;
 import static java.util.Collections.singletonList;
 import static java.util.stream.Collectors.toList;
@@ -30,8 +31,9 @@ import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import org.apache.kafka.connect.errors.ConnectException;
@@ -44,6 +46,7 @@ import org.bson.BsonType;
 import org.bson.RawBsonDocument;
 import org.bson.conversions.Bson;
 
+import com.github.jcustenborder.kafka.connect.utils.RegexUtils;
 import com.mongodb.MongoNamespace;
 import com.mongodb.client.MongoClient;
 
@@ -176,9 +179,22 @@ class MongoCopyDataManager implements AutoCloseable {
     }
 
     if (!namespacesRegex.isEmpty()) {
-      Predicate<String> predicate = Pattern.compile(namespacesRegex).asPredicate();
+      Pattern pattern = Pattern.compile(namespacesRegex);
+      long regexTimeout = sourceConfig.getLong(REGEX_TIMEOUT_MS);
       namespaces =
-          namespaces.stream().filter(n -> predicate.test(n.getFullName())).collect(toList());
+          namespaces.stream().filter(n -> {
+            try {
+              return RegexUtils.find(pattern, n.getFullName(), regexTimeout);
+            } catch (TimeoutException e) {
+              throw new ConnectException(
+                  "Regex replacement operation timed out after " + regexTimeout + "ms", e);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              throw new ConnectException("Thread was interrupted during regex replacement", e);
+            } catch (ExecutionException e) {
+              throw new ConnectException("Error during regex replacement", e);
+            }
+          }).collect(toList());
     }
 
     return namespaces;

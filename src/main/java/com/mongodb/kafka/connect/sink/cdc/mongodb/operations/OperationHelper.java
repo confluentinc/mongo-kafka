@@ -40,7 +40,7 @@ final class OperationHelper {
   private static final String TRUNCATED_ARRAYS = "truncatedArrays";
   private static final String DISAMBIGUATED_PATHS = "disambiguatedPaths";
   private static final Set<String> UPDATE_DESCRIPTION_FIELDS =
-      new HashSet<>(asList(UPDATED_FIELDS, REMOVED_FIELDS, TRUNCATED_ARRAYS, DISAMBIGUATED_PATHS));
+          new HashSet<>(asList(UPDATED_FIELDS, REMOVED_FIELDS, TRUNCATED_ARRAYS, DISAMBIGUATED_PATHS));
 
   private static final String SET = "$set";
   private static final String UNSET = "$unset";
@@ -48,13 +48,12 @@ final class OperationHelper {
 
   static BsonDocument getDocumentKey(final BsonDocument changeStreamDocument) {
     if (!changeStreamDocument.containsKey(DOCUMENT_KEY)) {
-      throw new DataException(
-          format("Missing %s field: %s", DOCUMENT_KEY, changeStreamDocument.toJson()));
+      throw new DataException(format("Missing %s field", DOCUMENT_KEY));
     } else if (!changeStreamDocument.get(DOCUMENT_KEY).isDocument()) {
       throw new DataException(
-          format(
-              "Unexpected %s field type, expecting a document but found `%s`: %s",
-              DOCUMENT_KEY, changeStreamDocument.get(DOCUMENT_KEY), changeStreamDocument.toJson()));
+              format(
+                      "Unexpected %s field type, expecting a document but found `%s`",
+                      DOCUMENT_KEY, changeStreamDocument.get(DOCUMENT_KEY)));
     }
 
     return changeStreamDocument.getDocument(DOCUMENT_KEY);
@@ -66,15 +65,12 @@ final class OperationHelper {
 
   static BsonDocument getFullDocument(final BsonDocument changeStreamDocument) {
     if (!changeStreamDocument.containsKey(FULL_DOCUMENT)) {
-      throw new DataException(
-          format("Missing %s field: %s", FULL_DOCUMENT, changeStreamDocument.toJson()));
+      throw new DataException(format("Missing %s field", FULL_DOCUMENT));
     } else if (!changeStreamDocument.get(FULL_DOCUMENT).isDocument()) {
       throw new DataException(
-          format(
-              "Unexpected %s field type, expecting a document but found `%s`: %s",
-              FULL_DOCUMENT,
-              changeStreamDocument.get(FULL_DOCUMENT),
-              changeStreamDocument.toJson()));
+              format(
+                      "Unexpected %s field type, expecting a document but found `%s`",
+                      FULL_DOCUMENT, changeStreamDocument.get(FULL_DOCUMENT)));
     }
 
     return changeStreamDocument.getDocument(FULL_DOCUMENT);
@@ -82,15 +78,12 @@ final class OperationHelper {
 
   static BsonDocument getUpdateDocument(final BsonDocument changeStreamDocument) {
     if (!changeStreamDocument.containsKey(UPDATE_DESCRIPTION)) {
-      throw new DataException(
-          format("Missing %s field: %s", UPDATE_DESCRIPTION, changeStreamDocument.toJson()));
+      throw new DataException(format("Missing %s field", UPDATE_DESCRIPTION));
     } else if (!changeStreamDocument.get(UPDATE_DESCRIPTION).isDocument()) {
       throw new DataException(
-          format(
-              "Unexpected %s field type, expected a document found `%s`: %s",
-              UPDATE_DESCRIPTION,
-              changeStreamDocument.get(UPDATE_DESCRIPTION),
-              changeStreamDocument.toJson()));
+              format(
+                      "Unexpected %s field type, expected a document found `%s`",
+                      UPDATE_DESCRIPTION, changeStreamDocument.get(UPDATE_DESCRIPTION)));
     }
 
     BsonDocument updateDescription = changeStreamDocument.getDocument(UPDATE_DESCRIPTION);
@@ -98,53 +91,47 @@ final class OperationHelper {
     updateDescriptionFields.removeAll(UPDATE_DESCRIPTION_FIELDS);
     if (!updateDescriptionFields.isEmpty()) {
       throw new DataException(
-          format(
-              "Warning unexpected field(s) in %s %s. %s. Cannot process due to risk of data loss.",
-              UPDATE_DESCRIPTION, updateDescriptionFields, updateDescription.toJson()));
+              format(
+                      "Warning unexpected field(s) in %s %s. Cannot process due to risk of data loss.",
+                      UPDATE_DESCRIPTION, updateDescriptionFields));
     }
 
     if (!updateDescription.containsKey(UPDATED_FIELDS)) {
-      throw new DataException(
-          format(
-              "Missing %s.%s field: %s",
-              UPDATE_DESCRIPTION, UPDATED_FIELDS, updateDescription.toJson()));
+      throw new DataException(format("Missing %s.%s field", UPDATE_DESCRIPTION, UPDATED_FIELDS));
     } else if (!updateDescription.get(UPDATED_FIELDS).isDocument()) {
       throw new DataException(
-          format(
-              "Unexpected %s field type, expected a document but found `%s`: %s",
-              UPDATE_DESCRIPTION, updateDescription, updateDescription.toJson()));
+              format(
+                      "Unexpected %s field type, expected a document but found `%s`",
+                      UPDATE_DESCRIPTION, updateDescription));
     }
 
     if (!updateDescription.containsKey(REMOVED_FIELDS)) {
-      throw new DataException(
-          format(
-              "Missing %s.%s field: %s",
-              UPDATE_DESCRIPTION, REMOVED_FIELDS, updateDescription.toJson()));
+      throw new DataException(format("Missing %s.%s field", UPDATE_DESCRIPTION, REMOVED_FIELDS));
     } else if (!updateDescription.get(REMOVED_FIELDS).isArray()) {
       throw new DataException(
-          format(
-              "Unexpected %s field type, expected an array but found `%s`: %s",
-              REMOVED_FIELDS, updateDescription.get(REMOVED_FIELDS), updateDescription.toJson()));
+              format(
+                      "Unexpected %s field type, expected an array but found `%s`",
+                      REMOVED_FIELDS, updateDescription.get(REMOVED_FIELDS)));
     }
 
     if (updateDescription.containsKey(TRUNCATED_ARRAYS)
-        && !updateDescription.get(TRUNCATED_ARRAYS).isArray()) {
+            && !updateDescription.get(TRUNCATED_ARRAYS).isArray()) {
       throw new DataException(
-          format(
-              "Unexpected %s field type, expected an array but found `%s`: %s",
-              TRUNCATED_ARRAYS,
-              updateDescription.get(TRUNCATED_ARRAYS),
-              updateDescription.toJson()));
+              format(
+                      "Unexpected %s field type, expected an array but found `%s`: %s",
+                      TRUNCATED_ARRAYS,
+                      updateDescription.get(TRUNCATED_ARRAYS),
+                      updateDescription.toJson()));
     }
 
     if (updateDescription.containsKey(DISAMBIGUATED_PATHS)
-        && !updateDescription.get(DISAMBIGUATED_PATHS).isDocument()) {
+            && !updateDescription.get(DISAMBIGUATED_PATHS).isDocument()) {
       throw new DataException(
-          format(
-              "Unexpected %s field type, expected an array but found `%s`: %s",
-              DISAMBIGUATED_PATHS,
-              updateDescription.get(DISAMBIGUATED_PATHS),
-              updateDescription.toJson()));
+              format(
+                      "Unexpected %s field type, expected an array but found `%s`: %s",
+                      DISAMBIGUATED_PATHS,
+                      updateDescription.get(DISAMBIGUATED_PATHS),
+                      updateDescription.toJson()));
     }
 
     BsonDocument updatedFields = updateDescription.getDocument(UPDATED_FIELDS);
@@ -153,9 +140,9 @@ final class OperationHelper {
     for (final BsonValue removedField : removedFields) {
       if (!removedField.isString()) {
         throw new DataException(
-            format(
-                "Unexpected value type in %s, expected a string but found `%s`: %s",
-                REMOVED_FIELDS, removedField, updateDescription.toJson()));
+                format(
+                        "Unexpected value type in %s, expected an string but found `%s`",
+                        REMOVED_FIELDS, removedField));
       }
       unsetDocument.append(removedField.asString().getValue(), EMPTY_STRING);
     }
