@@ -118,20 +118,18 @@ final class OperationHelper {
         && !updateDescription.get(TRUNCATED_ARRAYS).isArray()) {
       throw new DataException(
           format(
-              "Unexpected %s field type, expected an array but found `%s`: %s",
+              "Unexpected %s field type, expected an array but found `%s`",
               TRUNCATED_ARRAYS,
-              updateDescription.get(TRUNCATED_ARRAYS),
-              updateDescription.toJson()));
+              updateDescription.get(TRUNCATED_ARRAYS)));
     }
 
     if (updateDescription.containsKey(DISAMBIGUATED_PATHS)
         && !updateDescription.get(DISAMBIGUATED_PATHS).isDocument()) {
       throw new DataException(
           format(
-              "Unexpected %s field type, expected an array but found `%s`: %s",
+              "Unexpected %s field type, expected an array but found `%s`",
               DISAMBIGUATED_PATHS,
-              updateDescription.get(DISAMBIGUATED_PATHS),
-              updateDescription.toJson()));
+              updateDescription.get(DISAMBIGUATED_PATHS)));
     }
 
     BsonDocument updatedFields = updateDescription.getDocument(UPDATED_FIELDS);
