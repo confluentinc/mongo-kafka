@@ -53,6 +53,7 @@ extra.apply {
     set("mongodbDriverVersion", "[4.7,4.7.99]")
     set("kafkaVersion", "3.8.1")
     set("avroVersion", "1.12.0")
+    set("connectUtilsVersion", "1.1.0")
 }
 
 val mongoAndAvroDependencies: Configuration by configurations.creating
@@ -61,9 +62,11 @@ dependencies {
     implementation("org.apache.kafka:connect-api:${project.extra["kafkaVersion"]}")
     implementation("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     implementation("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    implementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoAndAvroDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     mongoAndAvroDependencies("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    mongoAndAvroDependencies("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     // Unit Tests
     testImplementation(platform("org.junit:junit-bom:5.8.1"))
@@ -219,32 +222,6 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     enabled = baseName.equals("main")
     reports.maybeCreate("html").isEnabled = !project.hasProperty("xmlReports.enabled")
     reports.maybeCreate("xml").isEnabled = project.hasProperty("xmlReports.enabled")
-}
-
-// Spotless is used to lint and reformat source files.
-spotless {
-    java {
-        googleJavaFormat("1.12.0")
-        importOrder("java", "io", "org", "org.bson", "com.mongodb", "com.mongodb.kafka", "")
-        removeUnusedImports() // removes any unused imports
-        trimTrailingWhitespace()
-        endWithNewline()
-        indentWithSpaces()
-    }
-
-    kotlinGradle {
-        ktlint("0.31.0")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-
-    format("extraneous") {
-        target("*.xml", "*.yml", "*.md")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
 }
 
 tasks.named("compileJava") {
