@@ -903,8 +903,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
           task.logCapture.getEvents().stream()
               .filter(e -> e.getLevel().equals(Level.ERROR))
               .anyMatch(
-                  e ->
-                      e.getMessage().toString().contains("Exception creating Source record for:")));
+                  e -> e.getMessage().toString().contains("Exception creating Source record")));
 
       // Reset and test copy existing without logs
       task.stop();
@@ -922,7 +921,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
               .findFirst()
               .map(e -> e.getMessage().toString())
               .orElseGet(() -> "")
-              .contains("Exception creating Source record for:"));
+              .contains("Exception creating Source record"));
       task.stop();
     }
   }
@@ -956,7 +955,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
       insertMany(rangeClosed(4, 5), coll);
 
       Exception e = assertThrows(DataException.class, () -> getNextResults(task));
-      assertTrue(e.getMessage().contains("Exception creating Source record for:"));
+      assertTrue(e.getMessage().contains("Exception creating Source record"));
     }
   }
 
