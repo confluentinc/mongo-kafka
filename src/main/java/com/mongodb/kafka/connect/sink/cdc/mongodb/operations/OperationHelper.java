@@ -120,8 +120,7 @@ final class OperationHelper {
           format(
               "Unexpected %s field type, expected an array but found `%s`: %s",
               TRUNCATED_ARRAYS,
-              updateDescription.get(TRUNCATED_ARRAYS),
-              updateDescription.toJson()));
+              updateDescription.get(TRUNCATED_ARRAYS)));
     }
 
     if (updateDescription.containsKey(DISAMBIGUATED_PATHS)
@@ -130,8 +129,7 @@ final class OperationHelper {
           format(
               "Unexpected %s field type, expected an array but found `%s`: %s",
               DISAMBIGUATED_PATHS,
-              updateDescription.get(DISAMBIGUATED_PATHS),
-              updateDescription.toJson()));
+              updateDescription.get(DISAMBIGUATED_PATHS)));
     }
 
     BsonDocument updatedFields = updateDescription.getDocument(UPDATED_FIELDS);
