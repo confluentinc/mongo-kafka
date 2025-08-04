@@ -45,6 +45,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeAll;
 
 import org.bson.BsonDocument;
 import org.bson.Document;
@@ -55,6 +56,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
 
+import com.mongodb.kafka.connect.mongodb.MongoDBHelper;
 import com.mongodb.kafka.connect.sink.MongoSinkConfig;
 import com.mongodb.kafka.connect.sink.MongoSinkTopicConfig;
 import com.mongodb.kafka.connect.source.MongoSourceConfig;
@@ -72,12 +74,19 @@ public final class ConnectorValidationIntegrationTest {
   private static final String CUSTOM_DATABASE = "customDatabase";
   private static final String CUSTOM_COLLECTION = "customCollection";
   private static MongoClient mongoClient;
+  private static final MongoDBHelper MONGO_DB_HELPER = new MongoDBHelper();
+
+  @BeforeAll
+  static void setUp() {
+    MONGO_DB_HELPER.startMongoContainer();
+  }
 
   @AfterAll
   static void done() {
     if (mongoClient != null) {
       mongoClient.close();
     }
+    MONGO_DB_HELPER.closeMongoDbContainer();
   }
 
   @AfterEach
