@@ -44,10 +44,7 @@ public class MongoDBHelper
   private static final String MONGO_TAG = "latest";
 
   @Container
-  private static final MongoDBAtlasLocalContainer MONGO_CONTAINER =
-      new MongoDBAtlasLocalContainer(MONGO_IMAGE + ":" + MONGO_TAG)
-          .withEnv("MONGODB_INITDB_ROOT_USERNAME", MONGO_USERNAME)
-          .withEnv("MONGODB_INITDB_ROOT_PASSWORD", MONGO_PASSWORD);
+  private MongoDBAtlasLocalContainer MONGO_CONTAINER;
 
   private static final Logger LOGGER = LoggerFactory.getLogger(MongoDBHelper.class);
 
@@ -114,14 +111,23 @@ public class MongoDBHelper
     return connectionString;
   }
 
-  public static void startMongoContainer() {
-    MONGO_CONTAINER.start();
-    String mongoURI = MONGO_CONTAINER.getConnectionString()
-        .replace("mongodb://", "mongodb://" + MONGO_USERNAME + ":" + MONGO_PASSWORD + "@");
-    System.setProperty(URI_SYSTEM_PROPERTY_NAME, mongoURI);
+  public void startMongoContainer() {
+    if(MONGO_CONTAINER == null) {
+      MONGO_CONTAINER =
+          new MongoDBAtlasLocalContainer(MONGO_IMAGE + ":" + MONGO_TAG)
+              .withEnv("MONGODB_INITDB_ROOT_USERNAME", MONGO_USERNAME)
+              .withEnv("MONGODB_INITDB_ROOT_PASSWORD", MONGO_PASSWORD);
+      MONGO_CONTAINER.start();
+      String mongoURI = MONGO_CONTAINER.getConnectionString()
+          .replace("mongodb://", "mongodb://" + MONGO_USERNAME + ":" + MONGO_PASSWORD + "@");
+      System.setProperty(URI_SYSTEM_PROPERTY_NAME, mongoURI);
+    }
   }
 
-  public static void closeMongoDbContainer() {
-    MONGO_CONTAINER.close();
+  public void closeMongoDbContainer() {
+    if (MONGO_CONTAINER != null) {
+      MONGO_CONTAINER.close();
+      MONGO_CONTAINER = null;
+    }
   }
 }

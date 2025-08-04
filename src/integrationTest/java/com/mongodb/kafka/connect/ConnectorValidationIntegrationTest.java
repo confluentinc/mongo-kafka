@@ -74,10 +74,11 @@ public final class ConnectorValidationIntegrationTest {
   private static final String CUSTOM_DATABASE = "customDatabase";
   private static final String CUSTOM_COLLECTION = "customCollection";
   private static MongoClient mongoClient;
+  private static final MongoDBHelper MONGO_DB_HELPER = new MongoDBHelper();
 
   @BeforeAll
   static void setUp() {
-    MongoDBHelper.startMongoContainer();
+    MONGO_DB_HELPER.startMongoContainer();
   }
 
   @AfterAll
@@ -85,7 +86,7 @@ public final class ConnectorValidationIntegrationTest {
     if (mongoClient != null) {
       mongoClient.close();
     }
-    MongoDBHelper.closeMongoDbContainer();
+    MONGO_DB_HELPER.closeMongoDbContainer();
   }
 
   @AfterEach

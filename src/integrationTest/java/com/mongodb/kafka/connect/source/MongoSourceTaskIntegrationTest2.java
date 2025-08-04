@@ -91,15 +91,16 @@ class MongoSourceTaskIntegrationTest2 {
   private static final String TEST_COLLECTION = "myColl";
   private static final BsonDocument RESUME_TOKEN = BsonDocument.parse("{resume: 'token'}");
   private static final Map<String, Object> OFFSET = singletonMap("_id", RESUME_TOKEN.toJson());
+  private static final MongoDBHelper MONGO_DB_HELPER = new MongoDBHelper();
 
   @BeforeAll
   static void setUp() {
-    MongoDBHelper.startMongoContainer();
+    MONGO_DB_HELPER.startMongoContainer();
   }
 
   @AfterAll
   static void cleanUp() {
-    MongoDBHelper.closeMongoDbContainer();
+    MONGO_DB_HELPER.closeMongoDbContainer();
   }
 
   @Test
