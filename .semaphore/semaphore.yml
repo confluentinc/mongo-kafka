@@ -39,6 +39,7 @@ blocks:
             - pip install confluent-release-tools -q
             - . sem-pint -c
             - ./gradlew test
+            - ./gradlew integrationTest
             - . cve-scan
             - . cache-maven store
       epilogue:
