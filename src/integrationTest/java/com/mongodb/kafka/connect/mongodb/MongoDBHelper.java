@@ -28,11 +28,26 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
 
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.mongodb.MongoDBAtlasLocalContainer;
+
+@Testcontainers
 public class MongoDBHelper
     implements BeforeAllCallback, BeforeEachCallback, AfterEachCallback, AfterAllCallback {
   private static final String DEFAULT_URI = "mongodb://localhost:27017";
-  private static final String URI_SYSTEM_PROPERTY_NAME = "org.mongodb.test.uri";
+  public static final String URI_SYSTEM_PROPERTY_NAME = "org.mongodb.test.uri";
   private static final String DEFAULT_DATABASE_NAME = "MongoKafkaTest";
+  private static final String MONGO_USERNAME = "test_username";
+  private static final String MONGO_PASSWORD = "test_password";
+  private static final String MONGO_IMAGE = "mongodb/mongodb-atlas-local";
+  private static final String MONGO_TAG = "latest";
+
+  @Container
+  private static final MongoDBAtlasLocalContainer MONGO_CONTAINER =
+      new MongoDBAtlasLocalContainer(MONGO_IMAGE + ":" + MONGO_TAG)
+          .withEnv("MONGODB_INITDB_ROOT_USERNAME", MONGO_USERNAME)
+          .withEnv("MONGODB_INITDB_ROOT_PASSWORD", MONGO_PASSWORD);
 
   private static final Logger LOGGER = LoggerFactory.getLogger(MongoDBHelper.class);
 
@@ -50,6 +65,7 @@ public class MongoDBHelper
 
   @Override
   public void beforeAll(final ExtensionContext context) {
+    startMongoContainer();
     getMongoClient();
   }
 
@@ -73,6 +89,8 @@ public class MongoDBHelper
       mongoClient.close();
       mongoClient = null;
     }
+    connectionString = null;
+    closeMongoDbContainer();
   }
 
   public String getDatabaseName() {
@@ -95,5 +113,16 @@ public class MongoDBHelper
       LOGGER.info("Connecting to: '{}'", connectionString);
     }
     return connectionString;
+  }
+
+  public static void startMongoContainer() {
+    MONGO_CONTAINER.start();
+    String mongoURI = MONGO_CONTAINER.getConnectionString()
+        .replace("mongodb://", "mongodb://" + MONGO_USERNAME + ":" + MONGO_PASSWORD + "@");
+    System.setProperty(URI_SYSTEM_PROPERTY_NAME, mongoURI);
+  }
+
+  public static void closeMongoDbContainer() {
+    MONGO_CONTAINER.close();
   }
 }
