@@ -64,6 +64,7 @@ extra.apply {
     set("confluentVersion", "6.0.1")
     set("scalaVersion", "2.13")
     set("curatorVersion", "2.9.0")
+    set("testcontainersVersion", "1.21.3")
 }
 
 val mongoDependencies: Configuration by configurations.creating
@@ -103,6 +104,10 @@ dependencies {
     testImplementation(group = "org.scala-lang", name = "scala-library")
     testImplementation(group = "org.apache.kafka", name = "kafka_${project.extra["scalaVersion"]}")
     testImplementation(group = "org.apache.kafka", name = "kafka_${project.extra["scalaVersion"]}", classifier = "test")
+    testImplementation(platform("org.testcontainers:testcontainers-bom:${project.extra["testcontainersVersion"]}"))
+    testImplementation("org.testcontainers:testcontainers")
+    testImplementation("org.testcontainers:junit-jupiter")
+    testImplementation("org.testcontainers:mongodb")
 }
 
 tasks.withType<JavaCompile> {
