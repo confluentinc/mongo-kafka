@@ -751,6 +751,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
                   MongoSourceConfig.COPY_EXISTING_PIPELINE_CONFIG,
                   "[{\"$match\": {\"myInt\": {\"$gt\": 10}}}]");
               put(MongoSourceConfig.POLL_MAX_BATCH_SIZE_CONFIG, "50");
+              put(MongoSourceConfig.DOCUMENT_KEY_AS_KEY_CONFIG, "true");
             }
           };
 
