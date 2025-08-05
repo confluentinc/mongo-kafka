@@ -89,6 +89,7 @@ public class MongoDBHelper
       mongoClient.close();
       mongoClient = null;
     }
+    connectionString = null;
     closeMongoDbContainer();
   }
 
