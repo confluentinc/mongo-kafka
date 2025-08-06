@@ -305,7 +305,7 @@ class MongoSinkConfigTest {
   void testTopicRegexWithOverridesReDOS() {
     String safeRegex = "(a+)+";
     String unsafeRegex = "(a+)+b";
-    
+
     // Create a string that will definitely cause a timeout with the unsafe regex,
     // but not with the safe regex
     // The string contains only 'a's but the unsafe regex requires a 'b' at the end
