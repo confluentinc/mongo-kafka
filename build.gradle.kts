@@ -54,6 +54,7 @@ extra.apply {
     set("kafkaVersion", "3.8.1")
     set("avroVersion", "1.12.0")
     set("connectUtilsVersion", "1.1.0")
+    set("testcontainersVersion", "1.21.3")
 }
 
 val mongoAndAvroDependencies: Configuration by configurations.creating
@@ -96,6 +97,10 @@ dependencies {
     // This lets us output logs for the integration tests which is required for tests that capture
     // logs to verify functionality.
     testImplementation("org.slf4j:slf4j-reload4j:2.0.13")
+    testImplementation(platform("org.testcontainers:testcontainers-bom:${project.extra["testcontainersVersion"]}"))
+    testImplementation("org.testcontainers:testcontainers")
+    testImplementation("org.testcontainers:junit-jupiter")
+    testImplementation("org.testcontainers:mongodb")
 }
 
 tasks.withType<JavaCompile> {
@@ -211,7 +216,6 @@ checkstyle {
 }
 
 spotbugs {
-    toolVersion.set("4.8.0")
     excludeFilter.set(project.file("config/spotbugs-exclude.xml"))
     showProgress.set(true)
     setReportLevel("high")
