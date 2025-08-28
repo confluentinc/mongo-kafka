@@ -60,17 +60,21 @@ import org.bson.codecs.Codec;
 import org.bson.codecs.EncoderContext;
 import org.bson.io.BasicOutputBuffer;
 import org.bson.json.JsonWriterSettings;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.bson.BsonArray;
 
 public class BsonValueToSchemaAndValue {
   private static final Codec<BsonValue> BSON_VALUE_CODEC = new BsonValueCodec();
   private final JsonWriterSettings jsonWriterSettings;
+  private static final Logger LOGGER = LoggerFactory.getLogger(BsonValueToSchemaAndValue.class);
 
   public BsonValueToSchemaAndValue(final JsonWriterSettings jsonWriterSettings) {
     this.jsonWriterSettings = jsonWriterSettings;
   }
 
   public SchemaAndValue toSchemaAndValue(final Schema schema, final BsonValue bsonValue) {
+    LOGGER.info("Converting schema {} and value {} to SchemaAndValue", schema, bsonValue);
     SchemaAndValue schemaAndValue;
     if (schema.isOptional() && bsonValue.isNull()) {
       return new SchemaAndValue(schema, null);
@@ -336,6 +340,7 @@ public class BsonValueToSchemaAndValue {
   }
 
   private DataException unexpectedBsonValueType(final Schema.Type type, final BsonValue value) {
+    LOGGER.error("Schema type of {} invalid for the value {}", type, value);
     return new DataException(
         format(
             "Schema type of %s but value was of type: %s",
