@@ -317,6 +317,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
       if (!sourceConfig.getBoolean(REMOVE_FIELD_ON_SCHEMA_MISMATCH_CONFIG)) {
         valueSchemaAndValueProducer.checkForExtraFields(valueDocument);
       }
+      LOGGER.info("The Schema and Value producer used is {}", valueSchemaAndValueProducer.getClass().getSimpleName());
       SchemaAndValue keySchemaAndValue = keySchemaAndValueProducer.get(keyDocument);
       SchemaAndValue valueSchemaAndValue = valueSchemaAndValueProducer.get(valueDocument);
       return Optional.of(
