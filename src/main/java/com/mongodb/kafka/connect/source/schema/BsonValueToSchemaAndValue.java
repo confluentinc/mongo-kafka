@@ -111,7 +111,7 @@ public class BsonValueToSchemaAndValue {
       }
     }
     catch (DataException e) {
-      LOGGER.debug("Error while converting bson value {} to schema", bsonValue);
+      LOGGER.debug("Error while converting bson value {} to schema {}", bsonValue, schema);
       throw e;
     }
     return schemaAndValue;
