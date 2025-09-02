@@ -61,10 +61,13 @@ import org.bson.codecs.EncoderContext;
 import org.bson.io.BasicOutputBuffer;
 import org.bson.json.JsonWriterSettings;
 import org.bson.BsonArray;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class BsonValueToSchemaAndValue {
   private static final Codec<BsonValue> BSON_VALUE_CODEC = new BsonValueCodec();
   private final JsonWriterSettings jsonWriterSettings;
+  private static final Logger LOGGER = LoggerFactory.getLogger(BsonValueToSchemaAndValue.class);
 
   public BsonValueToSchemaAndValue(final JsonWriterSettings jsonWriterSettings) {
     this.jsonWriterSettings = jsonWriterSettings;
@@ -75,36 +78,41 @@ public class BsonValueToSchemaAndValue {
     if (schema.isOptional() && bsonValue.isNull()) {
       return new SchemaAndValue(schema, null);
     }
-
-    switch (schema.type()) {
-      case INT8:
-      case INT16:
-      case INT32:
-      case INT64:
-      case FLOAT32:
-      case FLOAT64:
-        schemaAndValue = numberToSchemaAndValue(schema, bsonValue);
-        break;
-      case BOOLEAN:
-        schemaAndValue = booleanToSchemaAndValue(schema, bsonValue);
-        break;
-      case STRING:
-        schemaAndValue = stringToSchemaAndValue(schema, bsonValue);
-        break;
-      case BYTES:
-        schemaAndValue = bytesToSchemaAndValue(schema, bsonValue);
-        break;
-      case ARRAY:
-        schemaAndValue = arrayToSchemaAndValue(schema, bsonValue);
-        break;
-      case MAP:
-        schemaAndValue = mapToSchemaAndValue(schema, bsonValue);
-        break;
-      case STRUCT:
-        schemaAndValue = recordToSchemaAndValue(schema, bsonValue);
-        break;
-      default:
-        throw unsupportedSchemaType(schema);
+    try {
+      switch (schema.type()) {
+        case INT8:
+        case INT16:
+        case INT32:
+        case INT64:
+        case FLOAT32:
+        case FLOAT64:
+          schemaAndValue = numberToSchemaAndValue(schema, bsonValue);
+          break;
+        case BOOLEAN:
+          schemaAndValue = booleanToSchemaAndValue(schema, bsonValue);
+          break;
+        case STRING:
+          schemaAndValue = stringToSchemaAndValue(schema, bsonValue);
+          break;
+        case BYTES:
+          schemaAndValue = bytesToSchemaAndValue(schema, bsonValue);
+          break;
+        case ARRAY:
+          schemaAndValue = arrayToSchemaAndValue(schema, bsonValue);
+          break;
+        case MAP:
+          schemaAndValue = mapToSchemaAndValue(schema, bsonValue);
+          break;
+        case STRUCT:
+          schemaAndValue = recordToSchemaAndValue(schema, bsonValue);
+          break;
+        default:
+          throw unsupportedSchemaType(schema);
+      }
+    }
+    catch (DataException e) {
+      LOGGER.debug("Error while converting bson value {} to schema {}", bsonValue, schema);
+      throw e;
     }
     return schemaAndValue;
   }

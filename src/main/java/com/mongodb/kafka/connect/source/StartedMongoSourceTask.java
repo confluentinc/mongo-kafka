@@ -358,6 +358,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
                 null,
                 headers));
       }
+      LOGGER.debug("Error in creating source record for the topic: {} and offset: {}", topicName, sourceOffset);
       throw new DataException(errorMessage.get(), e);
     }
   }
