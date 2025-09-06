@@ -18,6 +18,7 @@ package com.mongodb.kafka.connect.source;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.REGEX_TIMEOUT_MS;
+import static com.mongodb.kafka.connect.source.MongoSourceTask.TASK_ID_ZERO;
 import static java.lang.String.format;
 import static java.util.Collections.singletonList;
 import static java.util.stream.Collectors.toList;
@@ -31,6 +32,7 @@ import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -69,6 +71,7 @@ class MongoCopyDataManager implements AutoCloseable {
   private static final String NAMESPACE_FIELD = "ns";
   static final String ALT_NAMESPACE_FIELD = "__";
   private static final byte[] NAMESPACE_BYTES = NAMESPACE_FIELD.getBytes(StandardCharsets.UTF_8);
+  private static final String NAME = "name";
 
   private static final String PIPELINE_TEMPLATE =
       format(
@@ -106,9 +109,21 @@ class MongoCopyDataManager implements AutoCloseable {
     namespacesToCopy = new AtomicInteger(namespaces.size());
     CopyExistingConfig copyConfig = sourceConfig.getStartupConfig().copyExistingConfig();
     queue = new ArrayBlockingQueue<>(copyConfig.queueSize());
+    String connectorName = sourceConfig.originalsStrings().get(NAME);
+    String namePrefix = connectorName + "-" + TASK_ID_ZERO + "-mongo-copy-data-manager-executor-";
     executor =
         Executors.newFixedThreadPool(
-            Math.max(1, Math.min(namespaces.size(), copyConfig.maxThreads())));
+            Math.max(1, Math.min(namespaces.size(), copyConfig.maxThreads())),
+            new ThreadFactory() {
+              private final AtomicInteger threadNumber = new AtomicInteger(1);
+
+              @Override
+              public Thread newThread(Runnable r) {
+                Thread thread = Executors.defaultThreadFactory().newThread(r);
+                thread.setName(namePrefix + threadNumber.getAndIncrement());
+                return thread;
+              }
+            });
     namespaces.forEach(n -> executor.submit(() -> copyDataFrom(n)));
   }
 
