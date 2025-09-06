@@ -52,6 +52,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -126,6 +127,51 @@ class MongoCopyDataManagerTest {
 
     List<Optional<BsonDocument>> expected = asList(createOutput(jsonTemplate), Optional.empty());
     assertEquals(expected, results);
+  }
+
+  @Test
+  @DisplayName("threads are named with connector and task prefix for copy-existing executor")
+  void testThreadNamesForCopyExistingExecutor() {
+    String connectorName = "MyConnector";
+    String taskId = "0";
+    String jsonTemplate = createTemplate(1);
+
+    when(mongoClient.getDatabase(TEST_DATABASE)).thenReturn(mongoDatabase);
+    when(mongoDatabase.getCollection(TEST_COLLECTION, RawBsonDocument.class))
+        .thenReturn(mongoCollection);
+    when(mongoCollection.aggregate(anyList())).thenReturn(aggregateIterable);
+    when(aggregateIterable.allowDiskUse(COPY_EXISTING_ALLOW_DISK_USE_DEFAULT))
+        .thenReturn(aggregateIterable);
+    doCallRealMethod().when(aggregateIterable).forEach(any(Consumer.class));
+    when(aggregateIterable.iterator()).thenReturn(cursor);
+
+    when(cursor.hasNext()).thenReturn(true, false);
+
+    AtomicReference<String> threadNameRef = new AtomicReference<>();
+    when(cursor.next())
+        .thenAnswer(
+            invocation -> {
+              threadNameRef.set(Thread.currentThread().getName());
+              return createInput(jsonTemplate);
+            });
+
+    Map<String, String> props = new HashMap<>();
+    props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+    props.put(DATABASE_CONFIG, TEST_DATABASE);
+    props.put(COLLECTION_CONFIG, TEST_COLLECTION);
+    props.put("name", connectorName);
+
+    try (MongoCopyDataManager copyExistingDataManager =
+             new MongoCopyDataManager(new MongoSourceConfig(props), mongoClient)) {
+      sleep(300);
+      copyExistingDataManager.poll();
+    }
+
+    String expectedPrefix = connectorName + "-" + taskId + "-mongo-copy-data-manager-executor-";
+    assertTrue(
+        threadNameRef.get() != null && threadNameRef.get().startsWith(expectedPrefix),
+        () -> "Expected thread name to start with '"
+            + expectedPrefix + "' but was '" + threadNameRef.get() + "'");
   }
 
   @Test
