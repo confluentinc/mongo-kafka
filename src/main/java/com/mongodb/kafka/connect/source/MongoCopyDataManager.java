@@ -147,6 +147,7 @@ class MongoCopyDataManager implements AutoCloseable {
   }
 
   private void copyDataFrom(final MongoNamespace namespace) {
+    LOGGER.info("Testing for updated thread name: {}", Thread.currentThread().getName());
     LOGGER.debug("Copying existing data from: {}", namespace.getFullName());
     try {
       mongoClient
