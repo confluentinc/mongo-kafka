@@ -52,6 +52,9 @@ import com.mongodb.kafka.connect.source.MongoSourceConfig.StartupConfig.StartupM
 
 public class NegativeZeroNormalizationIntegrationTest extends MongoKafkaTestCase {
 
+  private static final Logger TEST_LOGGER =
+      Logger.getLogger(NegativeZeroNormalizationIntegrationTest.class);
+
   @BeforeEach
   void setUp() {
     assumeTrue(isReplicaSetOrSharded());
@@ -81,10 +84,9 @@ public class NegativeZeroNormalizationIntegrationTest extends MongoKafkaTestCase
     MongoDatabase database = getDatabaseWithPostfix();
     MongoCollection<BsonDocument> source = database.getCollection("source", BsonDocument.class);
 
-    Logger testLogger = Logger.getLogger(NegativeZeroNormalizationIntegrationTest.class);
-    try (LogCapture capture = new LogCapture(testLogger)) {
-      LOGGER.info("Starting NegativeZeroNormalizationIntegrationTest for namespace: {}",
-          source.getNamespace().getFullName());
+    try (LogCapture capture = new LogCapture(TEST_LOGGER)) {
+      TEST_LOGGER.info("Starting NegativeZeroNormalizationIntegrationTest for namespace: "
+          + source.getNamespace().getFullName());
 
       Properties sourceProperties = new Properties();
       sourceProperties.put(DATABASE_CONFIG, source.getNamespace().getDatabaseName());
@@ -100,19 +102,20 @@ public class NegativeZeroNormalizationIntegrationTest extends MongoKafkaTestCase
           format(
               "copy.%s.%s",
               source.getNamespace().getDatabaseName(), source.getNamespace().getCollectionName());
-      LOGGER.info("Source connector added. Topic: {}", topicName);
+      TEST_LOGGER.info("Source connector added. Topic: " + topicName);
 
       List<BsonDocument> originals =
           IntStream.range(1, 4)
               .mapToObj(i -> BsonDocument.parse(format(DOC_TEMPLATE, i)))
               .collect(toList());
 
-      LOGGER.info("Prepared {} original documents to insert", originals.size());
+      TEST_LOGGER.info("Prepared " + originals.size() + " original documents to insert");
       source.insertMany(originals);
-      LOGGER.info("Inserted {} documents into {}", originals.size(), source.getNamespace().getFullName());
+      TEST_LOGGER.info("Inserted " + originals.size() + " documents into "
+          + source.getNamespace().getFullName());
 
       // Read produced values from the source topic as UTF-8 JSON strings
-      LOGGER.info("Consuming {} records from topic {}", originals.size(), topicName);
+      TEST_LOGGER.info("Consuming " + originals.size() + " records from topic " + topicName);
       List<String> produced =
           getProduced(
               topicName,
@@ -121,11 +124,11 @@ public class NegativeZeroNormalizationIntegrationTest extends MongoKafkaTestCase
               c -> c.value(),
               originals.size(),
               10);
-      LOGGER.info("Consumed {} records from topic {}", produced.size(), topicName);
-      produced.forEach(v -> LOGGER.info("Produced value: {}", v));
+      TEST_LOGGER.info("Consumed " + produced.size() + " records from topic " + topicName);
+      produced.forEach(v -> TEST_LOGGER.info("Produced value: " + v));
 
       // Assert normalization: no "-0.0" occurrences for the fields, and positive zero present
-      LOGGER.info("Asserting negative-zero normalization on produced values");
+      TEST_LOGGER.info("Asserting negative-zero normalization on produced values");
       produced.forEach(
           v -> {
             assertFalse(
@@ -137,7 +140,7 @@ public class NegativeZeroNormalizationIntegrationTest extends MongoKafkaTestCase
                     && v.contains("\"$numberDecimal\": \"0.0\""),
                 () -> "Did not find positive zero normalization in value: " + v);
           });
-      LOGGER.info("Negative zero normalization assertions passed");
+      TEST_LOGGER.info("Negative zero normalization assertions passed");
     }
   }
 }
