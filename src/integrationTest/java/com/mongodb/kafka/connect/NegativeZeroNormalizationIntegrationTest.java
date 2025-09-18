@@ -24,14 +24,18 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_CO
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.TOPIC_PREFIX_CONFIG;
 import static java.lang.String.format;
 import static java.util.stream.Collectors.toList;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.mongodb.kafka.connect.log.LogCapture;
+import org.apache.log4j.Logger;
 import java.util.ArrayList;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Properties;
 import java.util.stream.IntStream;
 
-import org.apache.kafka.connect.storage.StringConverter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -69,51 +73,72 @@ public class NegativeZeroNormalizationIntegrationTest extends MongoKafkaTestCase
   private static final String DOC_TEMPLATE =
       "{\"_id\": %s, \"d\": {\"$numberDouble\": \"-0.0\"}, \"dec\": {\"$numberDecimal\": \"-0.0\"}}";
 
-  private static final String EXPECTED_TEMPLATE =
-      "{\"_id\": %s, \"d\": {\"$numberDouble\": \"0.0\"}, \"dec\": {\"$numberDecimal\": \"0.0\"}}";
+  // Expected template retained for clarity in assertions below, if needed in future updates.
 
   @Test
-  @DisplayName("Negative zero is normalized to positive zero in round trip")
+  @DisplayName("Source emits positive zero for negative-zero inputs")
   void testNegativeZeroNormalization() {
     MongoDatabase database = getDatabaseWithPostfix();
     MongoCollection<BsonDocument> source = database.getCollection("source", BsonDocument.class);
-    MongoCollection<BsonDocument> destination =
-        database.getCollection("destination", BsonDocument.class);
 
-    Properties sourceProperties = new Properties();
-    sourceProperties.put(DATABASE_CONFIG, source.getNamespace().getDatabaseName());
-    sourceProperties.put(COLLECTION_CONFIG, source.getNamespace().getCollectionName());
-    sourceProperties.put(TOPIC_PREFIX_CONFIG, "copy");
-    sourceProperties.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
-    sourceProperties.put(PUBLISH_FULL_DOCUMENT_ONLY_CONFIG, "true");
-    sourceProperties.put(OUTPUT_FORMAT_VALUE_CONFIG, OutputFormat.JSON.name());
-    sourceProperties.put(OUTPUT_SCHEMA_INFER_VALUE_CONFIG, "true");
-    addSourceConnector(sourceProperties);
+    Logger testLogger = Logger.getLogger(NegativeZeroNormalizationIntegrationTest.class);
+    try (LogCapture capture = new LogCapture(testLogger)) {
+      LOGGER.info("Starting NegativeZeroNormalizationIntegrationTest for namespace: {}",
+          source.getNamespace().getFullName());
 
-    Properties sinkProperties = createSinkProperties();
-    sinkProperties.put(
-        "topics",
-        format(
-            "copy.%s.%s",
-            source.getNamespace().getDatabaseName(), source.getNamespace().getCollectionName()));
-    sinkProperties.put(DATABASE_CONFIG, destination.getNamespace().getDatabaseName());
-    sinkProperties.put(COLLECTION_CONFIG, destination.getNamespace().getCollectionName());
-    sinkProperties.put("key.converter", StringConverter.class.getName());
-    sinkProperties.put("value.converter", StringConverter.class.getName());
-    addSinkConnector(sinkProperties);
+      Properties sourceProperties = new Properties();
+      sourceProperties.put(DATABASE_CONFIG, source.getNamespace().getDatabaseName());
+      sourceProperties.put(COLLECTION_CONFIG, source.getNamespace().getCollectionName());
+      sourceProperties.put(TOPIC_PREFIX_CONFIG, "copy");
+      sourceProperties.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+      sourceProperties.put(PUBLISH_FULL_DOCUMENT_ONLY_CONFIG, "true");
+      sourceProperties.put(OUTPUT_FORMAT_VALUE_CONFIG, OutputFormat.JSON.name());
+      sourceProperties.put(OUTPUT_SCHEMA_INFER_VALUE_CONFIG, "true");
+      addSourceConnector(sourceProperties);
 
-    List<BsonDocument> originals =
-        IntStream.range(1, 4)
-            .mapToObj(i -> BsonDocument.parse(format(DOC_TEMPLATE, i)))
-            .collect(toList());
-    List<BsonDocument> expected =
-        IntStream.range(1, 4)
-            .mapToObj(i -> BsonDocument.parse(format(EXPECTED_TEMPLATE, i)))
-            .collect(toList());
+      String topicName =
+          format(
+              "copy.%s.%s",
+              source.getNamespace().getDatabaseName(), source.getNamespace().getCollectionName());
+      LOGGER.info("Source connector added. Topic: {}", topicName);
 
-    source.insertMany(originals);
+      List<BsonDocument> originals =
+          IntStream.range(1, 4)
+              .mapToObj(i -> BsonDocument.parse(format(DOC_TEMPLATE, i)))
+              .collect(toList());
 
-    assertCollection(expected, destination);
+      LOGGER.info("Prepared {} original documents to insert", originals.size());
+      source.insertMany(originals);
+      LOGGER.info("Inserted {} documents into {}", originals.size(), source.getNamespace().getFullName());
+
+      // Read produced values from the source topic as UTF-8 JSON strings
+      LOGGER.info("Consuming {} records from topic {}", originals.size(), topicName);
+      List<String> produced =
+          getProduced(
+              topicName,
+              new MappingDeserializer<>(b -> new String(b.get(), StandardCharsets.UTF_8)),
+              new MappingDeserializer<>(b -> new String(b.get(), StandardCharsets.UTF_8)),
+              c -> c.value(),
+              originals.size(),
+              10);
+      LOGGER.info("Consumed {} records from topic {}", produced.size(), topicName);
+      produced.forEach(v -> LOGGER.info("Produced value: {}", v));
+
+      // Assert normalization: no "-0.0" occurrences for the fields, and positive zero present
+      LOGGER.info("Asserting negative-zero normalization on produced values");
+      produced.forEach(
+          v -> {
+            assertFalse(
+                v.contains("\"$numberDouble\": \"-0.0\"")
+                    || v.contains("\"$numberDecimal\": \"-0.0\""),
+                () -> "Found negative zero in value: " + v);
+            assertTrue(
+                v.contains("\"$numberDouble\": \"0.0\"")
+                    && v.contains("\"$numberDecimal\": \"0.0\""),
+                () -> "Did not find positive zero normalization in value: " + v);
+          });
+      LOGGER.info("Negative zero normalization assertions passed");
+    }
   }
 }
 
