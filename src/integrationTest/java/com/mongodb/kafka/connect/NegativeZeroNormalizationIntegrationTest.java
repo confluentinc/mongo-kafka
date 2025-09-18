@@ -67,10 +67,10 @@ public class NegativeZeroNormalizationIntegrationTest extends MongoKafkaTestCase
   }
 
   private static final String DOC_TEMPLATE =
-      "{_id: %s, d: {\\$numberDouble: \"-0.0\"}, dec: {\\$numberDecimal: \"-0.0\"}}";
+      "{\"_id\": %s, \"d\": {\"$numberDouble\": \"-0.0\"}, \"dec\": {\"$numberDecimal\": \"-0.0\"}}";
 
   private static final String EXPECTED_TEMPLATE =
-      "{_id: %s, d: {\\$numberDouble: \"0.0\"}, dec: {\\$numberDecimal: \"0.0\"}}";
+      "{\"_id\": %s, \"d\": {\"$numberDouble\": \"0.0\"}, \"dec\": {\"$numberDecimal\": \"0.0\"}}";
 
   @Test
   @DisplayName("Negative zero is normalized to positive zero in round trip")
