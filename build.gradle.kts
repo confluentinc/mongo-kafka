@@ -175,6 +175,7 @@ tasks.withType<Test> {
     useJUnitPlatform()
     testLogging {
         events("passed", "skipped", "failed")
+        showStandardStreams = true
     }
 
     val javaVersion: Int = (project.findProperty("javaVersion") as String? ?: defaultJdkVersion.toString()).toInt()
@@ -213,6 +214,12 @@ tasks.withType<Test> {
             }
         }
     })
+}
+
+// Ensure duplicate resources (e.g., multiple log4j.properties on the classpath) don't fail the
+// integration test resource processing step.
+tasks.withType<ProcessResources> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 /*
