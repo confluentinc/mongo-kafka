@@ -15,6 +15,7 @@
  */
 
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.gradle.testing.jacoco.tasks.JacocoMerge
 import java.io.ByteArrayOutputStream
 import java.net.URI
 import java.time.LocalDateTime
@@ -36,7 +37,7 @@ plugins {
     id("com.github.spotbugs") version "4.7.9"
     id("com.diffplug.spotless") version "5.17.1"
     id("com.github.johnrengelman.shadow") version "6.1.0"
-    id("org.sonarqube") version "5.1.0.4882"
+    id("org.sonarqube") version "3.5.0.2730"
     jacoco
 }
 
@@ -233,6 +234,10 @@ tasks.withType<JacocoReport> {
     }
 }
 
+tasks.named<JacocoReport>("jacocoTestReport") {
+    dependsOn("test")
+}
+
 // Optional separate XML for integration tests (not wired into check by default)
 tasks.register<JacocoReport>("jacocoIntegrationTestReport") {
     dependsOn("integrationTest")
@@ -247,50 +252,32 @@ tasks.register<JacocoReport>("jacocoIntegrationTestReport") {
     }
 }
 
-// Merge unit and (if present) integration XML into build/reports/jacoco/jacoco.xml without forcing ITs
-tasks.register("jacocoMergeXml") {
+// Merge JaCoCo exec data (unit + integration) and generate a single XML report for Sonar
+tasks.register<JacocoMerge>("jacocoMergeExec") {
     group = "verification"
-    description = "Merge unit and integration JaCoCo XML into one jacoco.xml if available"
+    description = "Merge unit and integration JaCoCo .exec data into one file"
+    executionData(fileTree(project.buildDir).include("**/jacoco/*.exec"))
+    destinationFile = file("${buildDir}/jacoco/jacoco-aggregate.exec")
     dependsOn("jacocoTestReport", "jacocoIntegrationTestReport")
-    doLast {
-        val reportsDir = file("${buildDir}/reports/jacoco")
-        val unitXml = file("${buildDir}/reports/jacoco/test/jacoco.xml")
-        val itXml = file("${buildDir}/reports/jacoco/integrationTest/jacoco.xml")
-        val out = file("${buildDir}/reports/jacoco/jacoco.xml")
+}
 
-        reportsDir.mkdirs()
-        val xmls = listOf(unitXml, itXml).filter { it.exists() }
-        if (xmls.isEmpty()) {
-            logger.lifecycle("No JaCoCo XML reports found to merge; skipping merge.")
-            return@doLast
-        }
-        out.writer().use { writer ->
-            writer.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-            writer.append("<report name=\"merged\">\n")
-            xmls.forEach { f ->
-                var started = false
-                f.forEachLine { line ->
-                    val trimmed = line.trim()
-                    if (!started) {
-                        if (trimmed.startsWith("<report ")) {
-                            started = true
-                        }
-                        return@forEachLine
-                    }
-                    if (trimmed == "</report>") {
-                        return@forEachLine
-                    }
-                    writer.append(line).append('\n')
-                }
-            }
-            writer.append("</report>\n")
-        }
-        logger.lifecycle("Merged JaCoCo XML report created at: ${out.absolutePath}")
+tasks.register<JacocoReport>("jacocoMergedReport") {
+    group = "verification"
+    description = "Generate XML coverage report from merged JaCoCo exec data"
+    dependsOn("jacocoMergeExec")
+    executionData(file("${buildDir}/jacoco/jacoco-aggregate.exec"))
+    sourceDirectories.setFrom(files(sourceSets.main.get().allSource.srcDirs))
+    classDirectories.setFrom(files(sourceSets.main.get().output))
+    reports {
+        xml.required.set(true)
+        xml.outputLocation.set(file("${buildDir}/reports/jacoco/jacoco.xml"))
+        html.required.set(false)
+        csv.required.set(false)
     }
 }
 
 tasks.named("check") {
-    dependsOn("integrationTest", "jacocoTestReport", "jacocoIntegrationTestReport", "jacocoMergeXml")
+    dependsOn("integrationTest", "jacocoTestReport", "jacocoIntegrationTestReport", "jacocoMergeExec", "jacocoMergedReport")
 }
 
 sonarqube {
@@ -308,7 +295,7 @@ sonarqube {
 }
 
 tasks.named("sonarqube") {
-    dependsOn("jacocoMergeXml")
+    dependsOn("jacocoMergedReport")
 }
 
 /*
