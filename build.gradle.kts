@@ -36,6 +36,8 @@ plugins {
     id("com.github.spotbugs") version "4.7.9"
     id("com.diffplug.spotless") version "5.17.1"
     id("com.github.johnrengelman.shadow") version "6.1.0"
+    id("org.sonarqube") version "5.1.0.4882"
+    jacoco
 }
 
 group = "org.mongodb.kafka"
@@ -213,6 +215,100 @@ tasks.withType<Test> {
             }
         }
     })
+
+    finalizedBy(tasks.named("jacocoTestReport"))
+}
+
+// JaCoCo configuration and XML reports for SonarQube
+jacoco {
+    toolVersion = "0.8.10"
+}
+
+tasks.withType<JacocoReport> {
+    reports {
+        xml.required.set(true)
+        xml.outputLocation.set(file("${buildDir}/reports/jacoco/test/jacoco.xml"))
+        html.required.set(false)
+        csv.required.set(false)
+    }
+}
+
+// Optional separate XML for integration tests (not wired into check by default)
+tasks.register<JacocoReport>("jacocoIntegrationTestReport") {
+    dependsOn("integrationTest")
+    executionData(fileTree(project.buildDir).include("**/jacoco/*.exec"))
+    sourceDirectories.setFrom(files(sourceSets.main.get().allSource.srcDirs))
+    classDirectories.setFrom(files(sourceSets.main.get().output))
+    reports {
+        xml.required.set(true)
+        xml.outputLocation.set(file("${buildDir}/reports/jacoco/integrationTest/jacoco.xml"))
+        html.required.set(false)
+        csv.required.set(false)
+    }
+}
+
+// Merge unit and (if present) integration XML into build/reports/jacoco/jacoco.xml without forcing ITs
+tasks.register("jacocoMergeXml") {
+    group = "verification"
+    description = "Merge unit and integration JaCoCo XML into one jacoco.xml if available"
+    dependsOn("jacocoTestReport", "jacocoIntegrationTestReport")
+    doLast {
+        val reportsDir = file("${buildDir}/reports/jacoco")
+        val unitXml = file("${buildDir}/reports/jacoco/test/jacoco.xml")
+        val itXml = file("${buildDir}/reports/jacoco/integrationTest/jacoco.xml")
+        val out = file("${buildDir}/reports/jacoco/jacoco.xml")
+
+        reportsDir.mkdirs()
+        val xmls = listOf(unitXml, itXml).filter { it.exists() }
+        if (xmls.isEmpty()) {
+            logger.lifecycle("No JaCoCo XML reports found to merge; skipping merge.")
+            return@doLast
+        }
+        out.writer().use { writer ->
+            writer.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+            writer.append("<report name=\"merged\">\n")
+            xmls.forEach { f ->
+                var started = false
+                f.forEachLine { line ->
+                    val trimmed = line.trim()
+                    if (!started) {
+                        if (trimmed.startsWith("<report ")) {
+                            started = true
+                        }
+                        return@forEachLine
+                    }
+                    if (trimmed == "</report>") {
+                        return@forEachLine
+                    }
+                    writer.append(line).append('\n')
+                }
+            }
+            writer.append("</report>\n")
+        }
+        logger.lifecycle("Merged JaCoCo XML report created at: ${out.absolutePath}")
+    }
+}
+
+tasks.named("check") {
+    dependsOn("integrationTest", "jacocoTestReport", "jacocoIntegrationTestReport", "jacocoMergeXml")
+}
+
+sonarqube {
+    properties {
+        property("sonar.projectKey", project.findProperty("sonar.projectKey") ?: "mongo-kafka")
+        property("sonar.projectName", project.name)
+        property("sonar.sourceEncoding", "UTF-8")
+        property("sonar.language", "java")
+        property("sonar.java.binaries", file("${buildDir}/classes"))
+        property("sonar.sources", ".")
+        property("sonar.exclusions", "**/*.pb.*,**/mk-include/**/*")
+        property("sonar.coverage.exclusions", "**/test/**/*,**/tests/**/*,**/mock/**/*,**/mocks/**/*,**/*mock*,**/*test*")
+        property("sonar.coverage.jacoco.xmlReportPaths", file("${buildDir}/reports/jacoco/jacoco.xml").absolutePath)
+    }
+}
+
+tasks.named("sonarqube") {
+    dependsOn("jacocoMergeXml")
 }
 
 /*
