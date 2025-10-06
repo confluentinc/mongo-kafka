@@ -15,6 +15,7 @@
  */
 
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import org.gradle.testing.jacoco.tasks.JacocoMerge
 import java.io.ByteArrayOutputStream
 import java.net.URI
 import java.time.LocalDateTime
@@ -36,6 +37,8 @@ plugins {
     id("com.github.spotbugs") version "4.7.9"
     id("com.diffplug.spotless") version "5.17.1"
     id("com.github.johnrengelman.shadow") version "6.1.0"
+    id("org.sonarqube") version "3.5.0.2730"
+    jacoco
 }
 
 group = "org.mongodb.kafka"
@@ -213,6 +216,86 @@ tasks.withType<Test> {
             }
         }
     })
+
+    finalizedBy(tasks.named("jacocoTestReport"))
+}
+
+// JaCoCo configuration and XML reports for SonarQube
+jacoco {
+    toolVersion = "0.8.10"
+}
+
+tasks.withType<JacocoReport> {
+    reports {
+        xml.required.set(true)
+        xml.outputLocation.set(file("${buildDir}/reports/jacoco/test/jacoco.xml"))
+        html.required.set(false)
+        csv.required.set(false)
+    }
+}
+
+tasks.named<JacocoReport>("jacocoTestReport") {
+    dependsOn("test")
+}
+
+// Optional separate XML for integration tests (not wired into check by default)
+tasks.register<JacocoReport>("jacocoIntegrationTestReport") {
+    dependsOn("integrationTest")
+    executionData(fileTree(project.buildDir).include("**/jacoco/*.exec"))
+    sourceDirectories.setFrom(files(sourceSets.main.get().allSource.srcDirs))
+    classDirectories.setFrom(files(sourceSets.main.get().output))
+    reports {
+        xml.required.set(true)
+        xml.outputLocation.set(file("${buildDir}/reports/jacoco/integrationTest/jacoco.xml"))
+        html.required.set(false)
+        csv.required.set(false)
+    }
+}
+
+// Merge JaCoCo exec data (unit + integration) and generate a single XML report for Sonar
+tasks.register<JacocoMerge>("jacocoMergeExec") {
+    group = "verification"
+    description = "Merge unit and integration JaCoCo .exec data into one file"
+    executionData(fileTree(project.buildDir).include("**/jacoco/*.exec"))
+    destinationFile = file("${buildDir}/jacoco/jacoco-aggregate.exec")
+    dependsOn("jacocoTestReport", "jacocoIntegrationTestReport")
+}
+
+tasks.register<JacocoReport>("jacocoMergedReport") {
+    group = "verification"
+    description = "Generate XML coverage report from merged JaCoCo exec data"
+    dependsOn("jacocoMergeExec")
+    executionData(file("${buildDir}/jacoco/jacoco-aggregate.exec"))
+    sourceDirectories.setFrom(files(sourceSets.main.get().allSource.srcDirs))
+    classDirectories.setFrom(files(sourceSets.main.get().output))
+    reports {
+        xml.required.set(true)
+        xml.outputLocation.set(file("${buildDir}/reports/jacoco/jacoco.xml"))
+        html.required.set(false)
+        csv.required.set(false)
+    }
+}
+
+tasks.named("check") {
+    dependsOn("integrationTest", "jacocoTestReport", "jacocoIntegrationTestReport", "jacocoMergeExec", "jacocoMergedReport")
+}
+
+sonarqube {
+    properties {
+        property("sonar.projectKey", project.findProperty("sonar.projectKey") ?: "mongo-kafka")
+        property("sonar.projectName", project.name)
+        property("sonar.sourceEncoding", "UTF-8")
+        property("sonar.language", "java")
+        property("sonar.java.binaries", file("${buildDir}/classes"))
+        property("sonar.sources", ".")
+        property("sonar.exclusions", "**/*.pb.*,**/mk-include/**/*")
+        property("sonar.coverage.exclusions", "**/test/**/*,**/tests/**/*,**/mock/**/*,**/mocks/**/*,**/*mock*,**/*test*")
+        property("sonar.coverage.jacoco.xmlReportPaths", file("${buildDir}/reports/jacoco/jacoco.xml").absolutePath)
+    }
+}
+
+tasks.named("sonarqube") {
+    dependsOn("jacocoMergedReport")
 }
 
 /*
