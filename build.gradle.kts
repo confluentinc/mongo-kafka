@@ -36,6 +36,7 @@ plugins {
     id("com.github.spotbugs") version "4.7.9"
     id("com.diffplug.spotless") version "5.17.1"
     id("com.github.johnrengelman.shadow") version "6.1.0"
+    jacoco
 }
 
 group = "org.mongodb.kafka"
@@ -213,6 +214,76 @@ tasks.withType<Test> {
             }
         }
     })
+}
+
+// JaCoCo configuration and tasks to produce a merged XML and stage CI artifacts
+jacoco {
+    toolVersion = "0.8.10"
+}
+
+tasks.withType<JacocoReport> {
+    reports {
+        xml.required.set(true)
+        html.required.set(false)
+        csv.required.set(false)
+    }
+}
+
+// Unit test coverage
+tasks.named<JacocoReport>("jacocoTestReport") {
+    dependsOn(tasks.named("test"))
+    executionData(fileTree(project.buildDir).include("**/jacoco/*.exec"))
+    sourceDirectories.setFrom(files(sourceSets.main.get().allSource.srcDirs))
+    classDirectories.setFrom(files(sourceSets.main.get().output))
+    reports {
+        xml.outputLocation.set(file("${buildDir}/reports/jacoco/test/jacoco.xml"))
+    }
+}
+
+// Integration test coverage
+tasks.register<JacocoReport>("jacocoIntegrationTestReport") {
+    dependsOn("integrationTest")
+    executionData(fileTree(project.buildDir).include("**/jacoco/*.exec"))
+    sourceDirectories.setFrom(files(sourceSets.main.get().allSource.srcDirs))
+    classDirectories.setFrom(files(sourceSets.main.get().output))
+    reports {
+        xml.outputLocation.set(file("${buildDir}/reports/jacoco/integrationTest/jacoco.xml"))
+    }
+}
+
+// Merge exec data and produce a single XML for Sonar consumption
+tasks.register<org.gradle.testing.jacoco.tasks.JacocoMerge>("jacocoMergeExec") {
+    group = "verification"
+    executionData(fileTree(project.buildDir).include("**/jacoco/*.exec"))
+    destinationFile = file("${buildDir}/jacoco/jacoco-aggregate.exec")
+    dependsOn("jacocoTestReport", "jacocoIntegrationTestReport")
+}
+
+tasks.register<JacocoReport>("jacocoMergedReport") {
+    group = "verification"
+    dependsOn("jacocoMergeExec")
+    executionData(file("${buildDir}/jacoco/jacoco-aggregate.exec"))
+    sourceDirectories.setFrom(files(sourceSets.main.get().allSource.srcDirs))
+    classDirectories.setFrom(files(sourceSets.main.get().output))
+    reports {
+        xml.required.set(true)
+        xml.outputLocation.set(file("${buildDir}/reports/jacoco/jacoco.xml"))
+        html.required.set(false)
+        csv.required.set(false)
+    }
+}
+
+// Stage artifacts to target/ for Semaphore after_pipeline Sonar step
+tasks.register<Copy>("ciStageArtifacts") {
+    group = "verification"
+    dependsOn("test", "integrationTest", "jacocoMergedReport")
+    from("${buildDir}/reports/jacoco/jacoco.xml") { into("jacoco/") }
+    from("${buildDir}/test-results")
+    into("target")
+}
+
+tasks.named("check") {
+    dependsOn("jacocoMergedReport", "ciStageArtifacts")
 }
 
 /*
