@@ -11,3 +11,19 @@ semaphore:
   cve_scan: true
   extra_deploy_args: "-Dcloud -Pjenkins"
   extra_build_args: "-Dcloud -Pjenkins"
+sonarqube:
+  enable: true
+  environments:
+    - prod
+  languages:
+    - java
+  coverage_reports:
+    - "**/jacoco.xml"
+  coverage_exclusions:
+    - "**/test/**/*"
+    - "**/tests/**/*"
+    - "**/mock/**/*"
+    - "**/mocks/**/*"
+    - "**/*mock*"
+    - "**/*test*"
+  quality_gate: Confluent80
