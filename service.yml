@@ -7,7 +7,9 @@ codeowners:
   enable: true
 semaphore:
   enable: true
-  pipeline_type: cp
+  pipeline_type: false
   cve_scan: true
   extra_deploy_args: "-Dcloud -Pjenkins"
   extra_build_args: "-Dcloud -Pjenkins"
+sonarqube:
+  enable: true
