@@ -63,5 +63,5 @@ after_pipeline:
       - name: SonarQube
         commands:
           - checkout
-          - sem-version java 11
-          - emit-sonarqube-data -a test-results
+          - sem-version java 17
+          - emit-sonarqube-data --enable_sonarqube_enterprise
