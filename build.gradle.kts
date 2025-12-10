@@ -51,7 +51,7 @@ repositories {
 extra.apply {
     set("mongodbDriverVersion", "[4.7,4.7.99]")
     set("kafkaVersion", "2.6.0")
-    set("avroVersion", "1.9.2") // Upgrade dep to 1.12.x as part of 2.0.x connector version bump
+    set("avroVersion", "1.11.4") // Upgrade dep to 1.12.x as part of 2.0.x connector version bump
     set("connectUtilsVersion", "1.1.0")
 
     // Testing dependencies
