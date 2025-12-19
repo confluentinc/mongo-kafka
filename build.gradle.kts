@@ -51,20 +51,7 @@ repositories {
 
 extra.apply {
     set("mongodbDriverVersion", "[4.7,4.7.99]")
-    set("connectUtilsVersion", "1.1.0")
-
-    // Testing dependencies
-    set("junitJupiterVersion", "5.8.1")
-    set("junitPlatformVersion", "1.8.1")
-    set("hamcrestVersion", "2.2")
-    set("mockitoVersion", "4.0.0")
-
-    // Integration test dependencies
-    set("confluentVersion", "6.0.1")
-    set("scalaVersion", "2.13")
-    set("curatorVersion", "2.9.0")
-    set("testcontainersVersion", "1.21.3")
-    set("kafkaVersion", "3.8.1")
+    set("kafkaVersion", "3.9.1")
     set("avroVersion", "1.12.0")
 }
 
