@@ -32,13 +32,14 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.connect.source.SourceTaskContext;
 import org.apache.kafka.connect.storage.OffsetStorageReader;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -66,6 +67,7 @@ import com.mongodb.event.CommandFailedEvent;
 import com.mongodb.event.CommandSucceededEvent;
 
 import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
+import com.mongodb.kafka.connect.mongodb.MongoDBHelper;
 
 /**
  * This class contains tests that are supposed to be unit tests, but because of how these tests were
@@ -89,12 +91,22 @@ class MongoSourceTaskIntegrationTest2 {
   private static final BsonDocument RESUME_TOKEN = BsonDocument.parse("{resume: 'token'}");
   private static final Map<String, Object> OFFSET = singletonMap("_id", RESUME_TOKEN.toJson());
 
+  @BeforeAll
+  static void setUp() {
+    MongoDBHelper.startMongoContainer();
+  }
+
+  @AfterAll
+  static void cleanUp() {
+    MongoDBHelper.closeMongoDbContainer();
+  }
+
   @Test
   @DisplayName("test creates the expected collection cursor")
   void testCreatesExpectedCollectionCursor() {
     MongoSourceTask task = new MongoSourceTask();
     Map<String, String> cfgMap = new HashMap<>();
-    cfgMap.put(CONNECTION_URI_CONFIG, "mongodb://localhost");
+    cfgMap.put(CONNECTION_URI_CONFIG, getConnectionString());
     cfgMap.put(DATABASE_CONFIG, TEST_DATABASE);
     cfgMap.put(COLLECTION_CONFIG, TEST_COLLECTION);
     MongoSourceConfig cfg = new MongoSourceConfig(cfgMap);
@@ -189,7 +201,7 @@ class MongoSourceTaskIntegrationTest2 {
   void testCreatesExpectedDatabaseCursor() {
     MongoSourceTask task = new MongoSourceTask();
     Map<String, String> cfgMap = new HashMap<>();
-    cfgMap.put(CONNECTION_URI_CONFIG, "mongodb://localhost");
+    cfgMap.put(CONNECTION_URI_CONFIG, getConnectionString());
     cfgMap.put(DATABASE_CONFIG, TEST_DATABASE);
     MongoSourceConfig cfg = new MongoSourceConfig(cfgMap);
     task.start(cfgMap);
@@ -277,7 +289,7 @@ class MongoSourceTaskIntegrationTest2 {
   void testCreatesExpectedClientCursor() {
     MongoSourceTask task = new MongoSourceTask();
     Map<String, String> cfgMap = new HashMap<>();
-    cfgMap.put(CONNECTION_URI_CONFIG, "mongodb://localhost");
+    cfgMap.put(CONNECTION_URI_CONFIG, getConnectionString());
     MongoSourceConfig cfg = new MongoSourceConfig(cfgMap);
     task.start(cfgMap);
 
@@ -389,7 +401,9 @@ class MongoSourceTaskIntegrationTest2 {
     String mBeanName =
         "com.mongodb.kafka.connect:type=source-task-metrics,connector=MongoSourceConnector,task=source-task-change-stream-unknown";
     MongoSourceTask task = new MongoSourceTask();
-    task.start(Collections.emptyMap());
+    Map<String, String> cfgMap = new HashMap<>();
+    cfgMap.put(CONNECTION_URI_CONFIG, getConnectionString());
+    task.start(cfgMap);
 
     task.commitRecord(null, new RecordMetadata(null, 0, 0, 0, 0L, 0, 0));
 
@@ -467,10 +481,14 @@ class MongoSourceTaskIntegrationTest2 {
     stats.unregister();
   }
 
-  private boolean isReplicaSetOrSharded() {
+  private String getConnectionString() {
     String defaultString = "mongodb://localhost:27017";
     String connectionString = System.getProperty("org.mongodb.test.uri", defaultString);
-    connectionString = connectionString.isEmpty() ? defaultString : connectionString;
+    return connectionString.isEmpty() ? defaultString : connectionString;
+  }
+
+  private boolean isReplicaSetOrSharded() {
+    String connectionString = getConnectionString();
     try (MongoClient mongoClient = MongoClients.create(connectionString)) {
       Document isMaster =
           mongoClient.getDatabase("admin").runCommand(BsonDocument.parse("{isMaster: 1}"));
