@@ -50,6 +50,7 @@ public final class BsonDocumentToSchema {
   }
 
   private static Schema inferArraySchema(final String fieldPath, final BsonArray bsonArray) {
+
     Schema combinedSchema = SENTINEL_STRING_TYPE;
     for (final BsonValue v : bsonArray) {
       combinedSchema = combinedSchema(combinedSchema, inferSchema(fieldPath, v));
