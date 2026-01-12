@@ -24,6 +24,8 @@ import static com.mongodb.kafka.connect.source.schema.SchemaUtils.assertStructsE
 import static com.mongodb.kafka.connect.util.jmx.internal.MBeanServerUtils.getMBeanAttributes;
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
+
+import java.util.Collections;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonList;
 import static java.util.Collections.singletonMap;
@@ -781,6 +783,10 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
           pollAfterDelete.stream()
               .map(r -> Document.parse(r.key().toString()).get("_id").toString())
               .collect(toList());
+      
+      // Sort both lists before comparing since delete events may arrive in any order
+      Collections.sort(documentIds);
+      Collections.sort(connectRecordsKeyIds);
       assertIterableEquals(documentIds, connectRecordsKeyIds);
     }
   }
