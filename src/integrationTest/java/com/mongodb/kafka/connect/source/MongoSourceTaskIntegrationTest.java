@@ -759,6 +759,8 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
       String documentString = "{'myInt': %s}";
 
       List<Document> docs = insertMany(rangeClosed(1, 60), documentString, coll);
+      System.out.println("DEBUG: Inserted " + docs.size() + " documents");
+      System.out.println("DEBUG: First 3 inserted docs: " + docs.subList(0, Math.min(3, docs.size())));
       task.start(cfg);
 
       List<Document> expectedDocs =
@@ -766,21 +768,36 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
               .filter(i -> i.get("myInt", 1) > 10)
               .map(d -> Document.parse(d.toJson()))
               .collect(toList());
+      System.out.println("DEBUG: Expected " + expectedDocs.size() + " docs after filter (myInt > 10)");
+      System.out.println("DEBUG: First 3 expected docs: " + expectedDocs.subList(0, Math.min(3, expectedDocs.size())));
 
       List<SourceRecord> poll = getNextResults(task);
+      System.out.println("DEBUG: Received " + poll.size() + " records from initial poll");
       List<Document> actualDocs =
           poll.stream().map(s -> Document.parse(s.value().toString())).collect(toList());
+      System.out.println("DEBUG: First 3 actual docs: " + actualDocs.subList(0, Math.min(3, actualDocs.size())));
       assertIterableEquals(expectedDocs, actualDocs);
 
+      System.out.println("DEBUG: About to delete all documents from collection");
       coll.deleteMany(new Document());
+      System.out.println("DEBUG: Deleted all documents, now polling for delete events...");
       List<SourceRecord> pollAfterDelete = getNextResults(task);
+      System.out.println("DEBUG: Received " + pollAfterDelete.size() + " records after delete");
+      for (int i = 0; i < Math.min(5, pollAfterDelete.size()); i++) {
+        SourceRecord r = pollAfterDelete.get(i);
+        System.out.println("DEBUG: Record " + i + " - key: " + r.key() + ", value: " + r.value());
+      }
       pollAfterDelete.forEach(s -> assertNull(s.value()));
 
       List<String> documentIds = docs.stream().map(s -> s.get("_id").toString()).collect(toList());
+      System.out.println("DEBUG: Document IDs count: " + documentIds.size());
+      System.out.println("DEBUG: First 3 document IDs: " + documentIds.subList(0, Math.min(3, documentIds.size())));
       List<String> connectRecordsKeyIds =
           pollAfterDelete.stream()
               .map(r -> Document.parse(r.key().toString()).get("_id").toString())
               .collect(toList());
+      System.out.println("DEBUG: Connect record key IDs count: " + connectRecordsKeyIds.size());
+      System.out.println("DEBUG: First 3 connect record key IDs: " + connectRecordsKeyIds.subList(0, Math.min(3, connectRecordsKeyIds.size())));
       assertIterableEquals(documentIds, connectRecordsKeyIds);
     }
   }
