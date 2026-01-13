@@ -781,6 +781,9 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
           pollAfterDelete.stream()
               .map(r -> Document.parse(r.key().toString()).get("_id").toString())
               .collect(toList());
+      // Sorting the lists before comparing as the ids may arrive in any order
+      documentIds.sort(null);
+      connectRecordsKeyIds.sort(null);
       assertIterableEquals(documentIds, connectRecordsKeyIds);
     }
   }
