@@ -144,8 +144,7 @@ public class MongoSinkTaskIntegrationTest extends MongoKafkaTestCase {
               .anyMatch(
                   e -> {
                     String message = String.valueOf(e.getMessage());
-                    return message.contains("Failed to put into the sink the following records")
-                        && message.contains("{\"_id\": 4}");
+                    return message.contains("Failed to put 1 records into the sink");
                   }),
           () ->
               "Captured"
@@ -340,7 +339,7 @@ public class MongoSinkTaskIntegrationTest extends MongoKafkaTestCase {
       DataException e = assertThrows(DataException.class, () -> task.put(sinkRecords));
       assertTrue(
           e.getMessage()
-              .contains("Could not convert value 'a' (java.lang.String) into a BsonDocument"));
+              .contains("Could not convert value in topic:topic-test at partition:0 offset:0 into a BsonDocument."));
     }
   }
 
