@@ -38,4 +38,9 @@ final class AvroSchemaAndValueProducer implements SchemaAndValueProducer {
   public SchemaAndValue get(final BsonDocument changeStreamDocument) {
     return bsonValueToSchemaAndValue.toSchemaAndValue(schema, changeStreamDocument);
   }
+
+  @Override
+  public void checkForExtraFields(final BsonDocument changeStreamDocument) {
+    bsonValueToSchemaAndValue.checkForExtraFields(schema, changeStreamDocument);
+  }
 }
