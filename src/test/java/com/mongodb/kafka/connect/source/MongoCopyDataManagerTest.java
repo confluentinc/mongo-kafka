@@ -73,6 +73,7 @@ import com.mongodb.Function;
 import com.mongodb.MongoNamespace;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.MongoClient;
+import com.mongodb.client.ListCollectionNamesIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
@@ -280,7 +281,7 @@ class MongoCopyDataManagerTest {
     String template2 = createTemplate(2, "myDB", "coll2");
 
     when(mongoClient.getDatabase(TEST_DATABASE)).thenReturn(mongoDatabase);
-    when(mongoDatabase.listCollectionNames()).thenReturn(new MockMongoIterable<>("coll1", "coll2"));
+    when(mongoDatabase.listCollectionNames()).thenReturn(new MockListCollectionNamesIterable("coll1", "coll2"));
     when(mongoDatabase.getCollection("coll1", RawBsonDocument.class)).thenReturn(mongoCollection);
     when(mongoDatabase.getCollection("coll2", RawBsonDocument.class))
         .thenReturn(mongoCollectionAlt);
@@ -332,8 +333,8 @@ class MongoCopyDataManagerTest {
     when(mongoClient.listDatabaseNames()).thenReturn(new MockMongoIterable<>("db1", "db2"));
     when(mongoClient.getDatabase("db1")).thenReturn(mongoDatabase);
     when(mongoClient.getDatabase("db2")).thenReturn(mongoDatabaseAlt);
-    when(mongoDatabase.listCollectionNames()).thenReturn(new MockMongoIterable<>("coll1"));
-    when(mongoDatabaseAlt.listCollectionNames()).thenReturn(new MockMongoIterable<>("coll2"));
+    when(mongoDatabase.listCollectionNames()).thenReturn(new MockListCollectionNamesIterable("coll1"));
+    when(mongoDatabaseAlt.listCollectionNames()).thenReturn(new MockListCollectionNamesIterable("coll2"));
 
     when(mongoDatabase.getCollection("coll1", RawBsonDocument.class)).thenReturn(mongoCollection);
     when(mongoDatabaseAlt.getCollection("coll2", RawBsonDocument.class))
@@ -388,9 +389,9 @@ class MongoCopyDataManagerTest {
     when(mongoClient.getDatabase("db2")).thenReturn(mongoDatabaseAlt);
 
     when(mongoDatabase.listCollectionNames())
-        .thenReturn(new MockMongoIterable<>("coll1", "coll2", "coll3"));
+        .thenReturn(new MockListCollectionNamesIterable("coll1", "coll2", "coll3"));
     when(mongoDatabaseAlt.listCollectionNames())
-        .thenReturn(new MockMongoIterable<>("coll1", "coll2"));
+        .thenReturn(new MockListCollectionNamesIterable("coll1", "coll2"));
 
     assertAll(
         () -> {
@@ -641,6 +642,71 @@ class MongoCopyDataManagerTest {
     @Override
     public MongoIterable<T> batchSize(final int batchSize) {
       throw new UnsupportedOperationException("Unsupported operation");
+    }
+  }
+
+  private static final class MockListCollectionNamesIterable implements ListCollectionNamesIterable {
+
+    private final Collection<String> result;
+
+    private MockListCollectionNamesIterable(final String... result) {
+      this.result = asList(result);
+    }
+
+    @Override
+    public MongoCursor<String> iterator() {
+      throw new UnsupportedOperationException("Unsupported operation");
+    }
+
+    @Override
+    public MongoCursor<String> cursor() {
+      throw new UnsupportedOperationException("Unsupported operation");
+    }
+
+    @Override
+    public String first() {
+      return null;
+    }
+
+    @Override
+    public <U> MongoIterable<U> map(final Function<String, U> mapper) {
+      throw new UnsupportedOperationException("Unsupported operation");
+    }
+
+    @Override
+    public <A extends Collection<? super String>> A into(final A target) {
+      target.addAll(result);
+      return target;
+    }
+
+    @Override
+    public ListCollectionNamesIterable batchSize(final int batchSize) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable maxTime(final long maxTime, final java.util.concurrent.TimeUnit timeUnit) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable comment(final String comment) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable comment(final org.bson.BsonValue comment) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable authorizedCollections(final boolean authorizedCollections) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable filter(final Bson filter) {
+      return this;
     }
   }
 }
