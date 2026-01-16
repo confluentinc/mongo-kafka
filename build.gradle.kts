@@ -52,9 +52,11 @@ repositories {
 }
 
 extra.apply {
-    set("mongodbDriverVersion", "[4.7,4.7.99]")
+    set("mongodbDriverVersion", "[5.6,5.6.99]")
     set("kafkaVersion", "3.9.1")
     set("avroVersion", "1.12.1")
+    set("connectUtilsVersion", "1.1.0")
+    set("testcontainersVersion", "1.21.3")
 }
 
 val mongoAndAvroDependencies: Configuration by configurations.creating
@@ -80,9 +82,11 @@ dependencies {
     }
     implementation("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     implementation("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    implementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoAndAvroDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     mongoAndAvroDependencies("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    mongoAndAvroDependencies("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     // Unit Tests
     testImplementation(platform("org.junit:junit-bom:5.8.1"))
@@ -112,7 +116,11 @@ dependencies {
     // This lets us output logs for the integration tests which is required for tests that capture
     // logs to verify functionality.
     testImplementation("org.slf4j:slf4j-reload4j:2.0.13")
-}
+    testImplementation(platform("org.testcontainers:testcontainers-bom:${project.extra["testcontainersVersion"]}"))
+    testImplementation("org.testcontainers:testcontainers")
+    testImplementation("org.testcontainers:junit-jupiter")
+    testImplementation("org.testcontainers:mongodb")
+   }
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
@@ -227,7 +235,7 @@ checkstyle {
 }
 
 spotbugs {
-    toolVersion.set("4.9.8")
+    toolVersion.set("4.8.0")
     excludeFilter.set(project.file("config/spotbugs-exclude.xml"))
     showProgress.set(true)
     setReportLevel("high")
@@ -240,31 +248,6 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     reports.maybeCreate("xml").isEnabled = project.hasProperty("xmlReports.enabled")
 }
 
-// Spotless is used to lint and reformat source files.
-spotless {
-    java {
-        googleJavaFormat("1.12.0")
-        importOrder("java", "io", "org", "org.bson", "com.mongodb", "com.mongodb.kafka", "")
-        removeUnusedImports() // removes any unused imports
-        trimTrailingWhitespace()
-        endWithNewline()
-        indentWithSpaces()
-    }
-
-    kotlinGradle {
-        ktlint("0.31.0")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-
-    format("extraneous") {
-        target("*.xml", "*.yml", "*.md")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-}
 
 // Configure CycloneDX SBOM generation
 tasks.named<CycloneDxTask>("cyclonedxBom") {
