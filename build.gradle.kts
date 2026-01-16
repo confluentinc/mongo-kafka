@@ -52,7 +52,7 @@ repositories {
 }
 
 extra.apply {
-    set("mongodbDriverVersion", "[4.7,4.7.99]")
+    set("mongodbDriverVersion", "[5.6,5.6.99]")
     set("kafkaVersion", "3.9.1")
     set("avroVersion", "1.12.1")
     set("connectUtilsVersion", "1.1.0")
@@ -120,7 +120,7 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:mongodb")
-}
+   }
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
