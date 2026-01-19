@@ -20,6 +20,7 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONF
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COPY_EXISTING_ALLOW_DISK_USE_DEFAULT;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PIPELINE_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.REGEX_TIMEOUT_MS;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG;
@@ -36,6 +37,8 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -48,10 +51,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import org.apache.kafka.connect.errors.ConnectException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -67,6 +73,7 @@ import com.mongodb.Function;
 import com.mongodb.MongoNamespace;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.MongoClient;
+import com.mongodb.client.ListCollectionNamesIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
@@ -121,6 +128,51 @@ class MongoCopyDataManagerTest {
 
     List<Optional<BsonDocument>> expected = asList(createOutput(jsonTemplate), Optional.empty());
     assertEquals(expected, results);
+  }
+
+  @Test
+  @DisplayName("threads are named with connector and task prefix for copy-existing executor")
+  void testThreadNamesForCopyExistingExecutor() {
+    String connectorName = "MyConnector";
+    String taskId = "0";
+    String jsonTemplate = createTemplate(1);
+
+    when(mongoClient.getDatabase(TEST_DATABASE)).thenReturn(mongoDatabase);
+    when(mongoDatabase.getCollection(TEST_COLLECTION, RawBsonDocument.class))
+        .thenReturn(mongoCollection);
+    when(mongoCollection.aggregate(anyList())).thenReturn(aggregateIterable);
+    when(aggregateIterable.allowDiskUse(COPY_EXISTING_ALLOW_DISK_USE_DEFAULT))
+        .thenReturn(aggregateIterable);
+    doCallRealMethod().when(aggregateIterable).forEach(any(Consumer.class));
+    when(aggregateIterable.iterator()).thenReturn(cursor);
+
+    when(cursor.hasNext()).thenReturn(true, false);
+
+    AtomicReference<String> threadNameRef = new AtomicReference<>();
+    when(cursor.next())
+        .thenAnswer(
+            invocation -> {
+              threadNameRef.set(Thread.currentThread().getName());
+              return createInput(jsonTemplate);
+            });
+
+    Map<String, String> props = new HashMap<>();
+    props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+    props.put(DATABASE_CONFIG, TEST_DATABASE);
+    props.put(COLLECTION_CONFIG, TEST_COLLECTION);
+    props.put("name", connectorName);
+
+    try (MongoCopyDataManager copyExistingDataManager =
+             new MongoCopyDataManager(new MongoSourceConfig(props), mongoClient)) {
+      sleep(300);
+      copyExistingDataManager.poll();
+    }
+
+    String expectedPrefix = connectorName + "-" + taskId + "-mongo-copy-data-manager-executor-";
+    assertTrue(
+        threadNameRef.get() != null && threadNameRef.get().startsWith(expectedPrefix),
+        () -> "Expected thread name to start with '"
+            + expectedPrefix + "' but was '" + threadNameRef.get() + "'");
   }
 
   @Test
@@ -229,7 +281,7 @@ class MongoCopyDataManagerTest {
     String template2 = createTemplate(2, "myDB", "coll2");
 
     when(mongoClient.getDatabase(TEST_DATABASE)).thenReturn(mongoDatabase);
-    when(mongoDatabase.listCollectionNames()).thenReturn(new MockMongoIterable<>("coll1", "coll2"));
+    when(mongoDatabase.listCollectionNames()).thenReturn(new MockListCollectionNamesIterable("coll1", "coll2"));
     when(mongoDatabase.getCollection("coll1", RawBsonDocument.class)).thenReturn(mongoCollection);
     when(mongoDatabase.getCollection("coll2", RawBsonDocument.class))
         .thenReturn(mongoCollectionAlt);
@@ -281,8 +333,8 @@ class MongoCopyDataManagerTest {
     when(mongoClient.listDatabaseNames()).thenReturn(new MockMongoIterable<>("db1", "db2"));
     when(mongoClient.getDatabase("db1")).thenReturn(mongoDatabase);
     when(mongoClient.getDatabase("db2")).thenReturn(mongoDatabaseAlt);
-    when(mongoDatabase.listCollectionNames()).thenReturn(new MockMongoIterable<>("coll1"));
-    when(mongoDatabaseAlt.listCollectionNames()).thenReturn(new MockMongoIterable<>("coll2"));
+    when(mongoDatabase.listCollectionNames()).thenReturn(new MockListCollectionNamesIterable("coll1"));
+    when(mongoDatabaseAlt.listCollectionNames()).thenReturn(new MockListCollectionNamesIterable("coll2"));
 
     when(mongoDatabase.getCollection("coll1", RawBsonDocument.class)).thenReturn(mongoCollection);
     when(mongoDatabaseAlt.getCollection("coll2", RawBsonDocument.class))
@@ -337,9 +389,9 @@ class MongoCopyDataManagerTest {
     when(mongoClient.getDatabase("db2")).thenReturn(mongoDatabaseAlt);
 
     when(mongoDatabase.listCollectionNames())
-        .thenReturn(new MockMongoIterable<>("coll1", "coll2", "coll3"));
+        .thenReturn(new MockListCollectionNamesIterable("coll1", "coll2", "coll3"));
     when(mongoDatabaseAlt.listCollectionNames())
-        .thenReturn(new MockMongoIterable<>("coll1", "coll2"));
+        .thenReturn(new MockListCollectionNamesIterable("coll1", "coll2"));
 
     assertAll(
         () -> {
@@ -479,6 +531,52 @@ class MongoCopyDataManagerTest {
     }
   }
 
+  @Test
+  public void testRegexReplacementWithTimeout() {
+    StringBuilder input = new StringBuilder();
+    for (int i = 0; i < 10000; i++) {
+      input.append("a");
+    }
+    String inputString = input.toString();
+
+    Map<String, String> props = new HashMap<>();
+    props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+    props.put(DATABASE_CONFIG, inputString);
+    props.put(COLLECTION_CONFIG, inputString);
+    props.put(STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG, "(([a.]+)+)Z");
+    props.put(REGEX_TIMEOUT_MS, "100");
+    MongoSourceConfig sourceConfig = createSourceConfig(props);
+
+    ConnectException exception = assertThrows(ConnectException.class,
+        () -> new MongoCopyDataManager(sourceConfig, mongoClient));
+    assertInstanceOf(TimeoutException.class, exception.getCause());
+  }
+
+  @Test
+  public void testRegexReplacementWithInterruption() throws InterruptedException {
+    StringBuilder input = new StringBuilder();
+    for (int i = 0; i < 10000; i++) {
+      input.append("a");
+    }
+    String inputString = input.toString();
+
+    Map<String, String> props = new HashMap<>();
+    props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+    props.put(DATABASE_CONFIG, inputString);
+    props.put(COLLECTION_CONFIG, inputString);
+    props.put(STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG, "(([a.]+)+)Z");
+    MongoSourceConfig sourceConfig = createSourceConfig(props);
+
+    Thread copyDataManagerThread = new Thread(() -> {
+      ConnectException e = assertThrows(ConnectException.class, () -> new MongoCopyDataManager(sourceConfig, mongoClient));
+      assertInstanceOf(InterruptedException.class, e.getCause(), "Expected InterruptedException as cause");
+      assertTrue(Thread.currentThread().isInterrupted(), "Thread should be interrupted");
+    });
+    copyDataManagerThread.start();
+    copyDataManagerThread.interrupt();
+    copyDataManagerThread.join(2000);
+  }
+
   private void sleep(final int millis) {
     try {
       Thread.sleep(millis);
@@ -544,6 +642,71 @@ class MongoCopyDataManagerTest {
     @Override
     public MongoIterable<T> batchSize(final int batchSize) {
       throw new UnsupportedOperationException("Unsupported operation");
+    }
+  }
+
+  private static final class MockListCollectionNamesIterable implements ListCollectionNamesIterable {
+
+    private final Collection<String> result;
+
+    private MockListCollectionNamesIterable(final String... result) {
+      this.result = asList(result);
+    }
+
+    @Override
+    public MongoCursor<String> iterator() {
+      throw new UnsupportedOperationException("Unsupported operation");
+    }
+
+    @Override
+    public MongoCursor<String> cursor() {
+      throw new UnsupportedOperationException("Unsupported operation");
+    }
+
+    @Override
+    public String first() {
+      return null;
+    }
+
+    @Override
+    public <U> MongoIterable<U> map(final Function<String, U> mapper) {
+      throw new UnsupportedOperationException("Unsupported operation");
+    }
+
+    @Override
+    public <A extends Collection<? super String>> A into(final A target) {
+      target.addAll(result);
+      return target;
+    }
+
+    @Override
+    public ListCollectionNamesIterable batchSize(final int batchSize) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable maxTime(final long maxTime, final java.util.concurrent.TimeUnit timeUnit) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable comment(final String comment) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable comment(final org.bson.BsonValue comment) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable authorizedCollections(final boolean authorizedCollections) {
+      return this;
+    }
+
+    @Override
+    public ListCollectionNamesIterable filter(final Bson filter) {
+      return this;
     }
   }
 }
