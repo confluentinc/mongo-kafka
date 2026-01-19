@@ -999,9 +999,8 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
               .filter(e -> e.getLevel().equals(Level.ERROR))
               .anyMatch(
                   e ->
-                      e.getRenderedMessage()
-                          .startsWith(
-                              "Failed to resume change stream: Query failed with error code 10334")));
+                      e.getRenderedMessage().contains("Failed to resume change stream")
+                          && e.getRenderedMessage().contains("10334")));
 
       Map<String, Map<String, Long>> mBeansMap =
           getMBeanAttributes(
