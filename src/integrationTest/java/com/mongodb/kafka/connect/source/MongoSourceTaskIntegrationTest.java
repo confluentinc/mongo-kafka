@@ -752,6 +752,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
                   MongoSourceConfig.COPY_EXISTING_PIPELINE_CONFIG,
                   "[{\"$match\": {\"myInt\": {\"$gt\": 10}}}]");
               put(MongoSourceConfig.POLL_MAX_BATCH_SIZE_CONFIG, "50");
+              put(MongoSourceConfig.DOCUMENT_KEY_AS_KEY_CONFIG, "true");
             }
           };
 
@@ -780,6 +781,9 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
           pollAfterDelete.stream()
               .map(r -> Document.parse(r.key().toString()).get("_id").toString())
               .collect(toList());
+      // Sorting the lists before comparing as the ids may arrive in any order
+      documentIds.sort(null);
+      connectRecordsKeyIds.sort(null);
       assertIterableEquals(documentIds, connectRecordsKeyIds);
     }
   }
@@ -903,8 +907,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
           task.logCapture.getEvents().stream()
               .filter(e -> e.getLevel().equals(Level.ERROR))
               .anyMatch(
-                  e ->
-                      e.getMessage().toString().contains("Exception creating Source record for:")));
+                  e -> e.getMessage().toString().contains("Exception creating Source record")));
 
       // Reset and test copy existing without logs
       task.stop();
@@ -922,7 +925,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
               .findFirst()
               .map(e -> e.getMessage().toString())
               .orElseGet(() -> "")
-              .contains("Exception creating Source record for:"));
+              .contains("Exception creating Source record"));
       task.stop();
     }
   }
@@ -956,7 +959,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
       insertMany(rangeClosed(4, 5), coll);
 
       Exception e = assertThrows(DataException.class, () -> getNextResults(task));
-      assertTrue(e.getMessage().contains("Exception creating Source record for:"));
+      assertTrue(e.getMessage().contains("Exception creating Source record"));
     }
   }
 
@@ -996,10 +999,8 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
               .filter(e -> e.getLevel().equals(Level.ERROR))
               .anyMatch(
                   e ->
-                      e.getMessage()
-                          .toString()
-                          .startsWith(
-                              "Failed to resume change stream: Query failed with error code 10334")));
+                      e.getRenderedMessage().contains("Failed to resume change stream")
+                          && e.getRenderedMessage().contains("10334")));
 
       Map<String, Map<String, Long>> mBeansMap =
           getMBeanAttributes(

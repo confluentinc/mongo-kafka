@@ -244,6 +244,6 @@ final class StartedMongoSinkTask implements AutoCloseable {
   }
 
   private static void log(final Collection<SinkRecord> records, final RuntimeException e) {
-    LOGGER.error("Failed to put into the sink the following records: {}", records, e);
+    LOGGER.error("Failed to put {} records into the sink", records.size(), e);
   }
 }
