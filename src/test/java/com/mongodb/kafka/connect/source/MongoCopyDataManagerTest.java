@@ -20,6 +20,7 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONF
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COPY_EXISTING_ALLOW_DISK_USE_DEFAULT;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PIPELINE_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.REGEX_TIMEOUT_MS;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG;
@@ -36,6 +37,8 @@ import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -48,10 +51,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import org.apache.kafka.connect.errors.ConnectException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -121,6 +127,51 @@ class MongoCopyDataManagerTest {
 
     List<Optional<BsonDocument>> expected = asList(createOutput(jsonTemplate), Optional.empty());
     assertEquals(expected, results);
+  }
+
+  @Test
+  @DisplayName("threads are named with connector and task prefix for copy-existing executor")
+  void testThreadNamesForCopyExistingExecutor() {
+    String connectorName = "MyConnector";
+    String taskId = "0";
+    String jsonTemplate = createTemplate(1);
+
+    when(mongoClient.getDatabase(TEST_DATABASE)).thenReturn(mongoDatabase);
+    when(mongoDatabase.getCollection(TEST_COLLECTION, RawBsonDocument.class))
+        .thenReturn(mongoCollection);
+    when(mongoCollection.aggregate(anyList())).thenReturn(aggregateIterable);
+    when(aggregateIterable.allowDiskUse(COPY_EXISTING_ALLOW_DISK_USE_DEFAULT))
+        .thenReturn(aggregateIterable);
+    doCallRealMethod().when(aggregateIterable).forEach(any(Consumer.class));
+    when(aggregateIterable.iterator()).thenReturn(cursor);
+
+    when(cursor.hasNext()).thenReturn(true, false);
+
+    AtomicReference<String> threadNameRef = new AtomicReference<>();
+    when(cursor.next())
+        .thenAnswer(
+            invocation -> {
+              threadNameRef.set(Thread.currentThread().getName());
+              return createInput(jsonTemplate);
+            });
+
+    Map<String, String> props = new HashMap<>();
+    props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+    props.put(DATABASE_CONFIG, TEST_DATABASE);
+    props.put(COLLECTION_CONFIG, TEST_COLLECTION);
+    props.put("name", connectorName);
+
+    try (MongoCopyDataManager copyExistingDataManager =
+             new MongoCopyDataManager(new MongoSourceConfig(props), mongoClient)) {
+      sleep(300);
+      copyExistingDataManager.poll();
+    }
+
+    String expectedPrefix = connectorName + "-" + taskId + "-mongo-copy-data-manager-executor-";
+    assertTrue(
+        threadNameRef.get() != null && threadNameRef.get().startsWith(expectedPrefix),
+        () -> "Expected thread name to start with '"
+            + expectedPrefix + "' but was '" + threadNameRef.get() + "'");
   }
 
   @Test
@@ -477,6 +528,52 @@ class MongoCopyDataManagerTest {
       sleep();
       copyExistingDataManager.poll();
     }
+  }
+
+  @Test
+  public void testRegexReplacementWithTimeout() {
+    StringBuilder input = new StringBuilder();
+    for (int i = 0; i < 10000; i++) {
+      input.append("a");
+    }
+    String inputString = input.toString();
+
+    Map<String, String> props = new HashMap<>();
+    props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+    props.put(DATABASE_CONFIG, inputString);
+    props.put(COLLECTION_CONFIG, inputString);
+    props.put(STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG, "(([a.]+)+)Z");
+    props.put(REGEX_TIMEOUT_MS, "100");
+    MongoSourceConfig sourceConfig = createSourceConfig(props);
+
+    ConnectException exception = assertThrows(ConnectException.class,
+        () -> new MongoCopyDataManager(sourceConfig, mongoClient));
+    assertInstanceOf(TimeoutException.class, exception.getCause());
+  }
+
+  @Test
+  public void testRegexReplacementWithInterruption() throws InterruptedException {
+    StringBuilder input = new StringBuilder();
+    for (int i = 0; i < 10000; i++) {
+      input.append("a");
+    }
+    String inputString = input.toString();
+
+    Map<String, String> props = new HashMap<>();
+    props.put(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue());
+    props.put(DATABASE_CONFIG, inputString);
+    props.put(COLLECTION_CONFIG, inputString);
+    props.put(STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_CONFIG, "(([a.]+)+)Z");
+    MongoSourceConfig sourceConfig = createSourceConfig(props);
+
+    Thread copyDataManagerThread = new Thread(() -> {
+      ConnectException e = assertThrows(ConnectException.class, () -> new MongoCopyDataManager(sourceConfig, mongoClient));
+      assertInstanceOf(InterruptedException.class, e.getCause(), "Expected InterruptedException as cause");
+      assertTrue(Thread.currentThread().isInterrupted(), "Thread should be interrupted");
+    });
+    copyDataManagerThread.start();
+    copyDataManagerThread.interrupt();
+    copyDataManagerThread.join(2000);
   }
 
   private void sleep(final int millis) {

@@ -16,11 +16,19 @@
 
 package com.mongodb.kafka.connect.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.bson.BsonDocument;
 
+import com.mongodb.MongoCommandException;
+import com.mongodb.MongoSocketException;
+import com.mongodb.MongoTimeoutException;
 import com.mongodb.client.MongoClient;
 
 public final class MongoClientHelper {
+  private static final Logger LOGGER = LoggerFactory.getLogger(MongoClientHelper.class);
+  private static final int MIN_REQUIRED_WIRE_VERSION = 13;
 
   private MongoClientHelper() {}
 
@@ -30,9 +38,13 @@ public final class MongoClientHelper {
               .getDatabase("admin")
               .runCommand(BsonDocument.parse("{hello: 1}"))
               .get("maxWireVersion", 0)
-          >= 13;
+          >= MIN_REQUIRED_WIRE_VERSION;
+    } catch (MongoCommandException | MongoSocketException | MongoTimeoutException e) {
+      LOGGER.error("MongoDB operation failed", e);
+      throw e;
     } catch (RuntimeException e) {
-      return false;
+      LOGGER.error("Runtime exception occurred", e);
+      throw e;
     }
   }
 }
