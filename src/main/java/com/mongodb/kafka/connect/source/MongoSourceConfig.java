@@ -293,7 +293,7 @@ public class MongoSourceConfig extends AbstractConfig {
           PUBLISH_FULL_DOCUMENT_ONLY_TOMBSTONE_ON_DELETE_DEFAULT);
 
   public static final String DOCUMENT_KEY_AS_KEY_CONFIG = "change.stream.document.key.as.key";
-  private static final boolean DOCUMENT_KEY_AS_KEY_DEFAULT = true;
+  private static final boolean DOCUMENT_KEY_AS_KEY_DEFAULT = false;
   private static final String DOCUMENT_KEY_AS_KEY_DISPLAY =
       "Use the `documentKey` for the source record key";
   private static final String DOCUMENT_KEY_AS_KEY_DOC =
@@ -463,6 +463,14 @@ public class MongoSourceConfig extends AbstractConfig {
           + "\nIt is an equivalent replacement for the deprecated 'copy.existing.namespace.regex'.";
   static final String STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_DEFAULT = EMPTY_STRING;
 
+  public static final String REGEX_TIMEOUT_MS = "regex.timeout.ms";
+  public static final long REGEX_TIMEOUT_MS_DEFAULT = 100L;
+  private static final String REGEX_TIMEOUT_MS_DOC =
+      "Timeout in milliseconds for any regex operation. This controls how long the connector will "
+          + "wait for regex pattern compilation, matching, replacement, or any other regex-related "
+          + "operation to complete before timing out.";
+  private static final String REGEX_TIMEOUT_MS_DISPLAY = "Regex Timeout (ms)";
+
   static final String STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_CONFIG =
       "startup.mode.copy.existing.allow.disk.use";
   private static final String STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_DISPLAY =
@@ -548,6 +556,16 @@ public class MongoSourceConfig extends AbstractConfig {
   public static final String OVERRIDE_ERRORS_TOLERANCE_CONFIG = "mongo.errors.tolerance";
   public static final String OVERRIDE_ERRORS_TOLERANCE_DOC =
       "Use this property if you would like to configure the connector's error handling behavior differently from the Connect framework's.";
+
+  public static final String REMOVE_FIELD_ON_SCHEMA_MISMATCH_CONFIG = "remove.field.on.schema.mismatch";
+  public static final boolean REMOVE_FIELD_ON_SCHEMA_MISMATCH_DEFAULT = true;
+  private static final String REMOVE_FIELD_ON_SCHEMA_MISMATCH_DOC =
+      "If true, remove fields from the document that are not present in the schema. "
+          + "Otherwise, throw an error or send the documents to the DLQ depending on the value of "
+          + ERRORS_TOLERANCE_CONFIG
+          + " being set to ALL or NONE respectively.";
+  private static final String REMOVE_FIELD_ON_SCHEMA_MISMATCH_DISPLAY =
+      "Remove Field on Schema Mismatch";
 
   public static final String ERRORS_LOG_ENABLE_CONFIG = "errors.log.enable";
   public static final String ERRORS_LOG_ENABLE_DISPLAY = "Log Errors";
@@ -1381,6 +1399,18 @@ public class MongoSourceConfig extends AbstractConfig {
         STARTUP_MODE_COPY_EXISTING_NAMESPACE_REGEX_DISPLAY);
 
     configDef.define(
+        REGEX_TIMEOUT_MS,
+        ConfigDef.Type.LONG,
+        REGEX_TIMEOUT_MS_DEFAULT,
+        ConfigDef.Range.atLeast(1),
+        ConfigDef.Importance.LOW,
+        REGEX_TIMEOUT_MS_DOC,
+        group,
+        ++orderInGroup,
+        ConfigDef.Width.SHORT,
+        REGEX_TIMEOUT_MS_DISPLAY);
+
+    configDef.define(
         STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_CONFIG,
         Type.BOOLEAN,
         STARTUP_MODE_COPY_EXISTING_ALLOW_DISK_USE_DEFAULT,
@@ -1486,6 +1516,18 @@ public class MongoSourceConfig extends AbstractConfig {
         ++orderInGroup,
         Width.SHORT,
         ERRORS_TOLERANCE_DISPLAY);
+
+    configDef.define(
+        REMOVE_FIELD_ON_SCHEMA_MISMATCH_CONFIG,
+        Type.BOOLEAN,
+        REMOVE_FIELD_ON_SCHEMA_MISMATCH_DEFAULT,
+        Importance.MEDIUM,
+        REMOVE_FIELD_ON_SCHEMA_MISMATCH_DOC,
+        group,
+        ++orderInGroup,
+        Width.SHORT,
+        REMOVE_FIELD_ON_SCHEMA_MISMATCH_DISPLAY
+    );
 
     configDef.define(
         ERRORS_LOG_ENABLE_CONFIG,
