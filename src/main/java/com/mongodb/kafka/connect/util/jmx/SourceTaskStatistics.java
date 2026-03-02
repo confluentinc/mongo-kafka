@@ -198,7 +198,7 @@ public class SourceTaskStatistics extends MongoMBean {
   private final Metric getmoreCommandsSuccessful = registerMs("getmore-commands-successful");
   private final Metric initialCommandsFailed = registerMs("initial-commands-failed");
   private final Metric getmoreCommandsFailed = registerMs("getmore-commands-failed");
-  private final Metric connectTaskDnd = registerLatest("connect.task.dnd");
+  private final Metric connectTaskDnd = registerLatest("connect-task-dnd");
 
   public SourceTaskStatistics(final String name) {
     super(name);
