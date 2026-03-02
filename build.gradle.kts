@@ -34,7 +34,6 @@ plugins {
     checkstyle
     id("com.github.gmazzo.buildconfig") version "3.0.3"
     id("com.github.spotbugs") version "4.8.0"
-    id("com.diffplug.spotless") version "5.17.1"
     id("com.github.johnrengelman.shadow") version "6.1.0"
     id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
 }
@@ -219,36 +218,6 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     enabled = baseName.equals("main")
     reports.maybeCreate("html").isEnabled = !project.hasProperty("xmlReports.enabled")
     reports.maybeCreate("xml").isEnabled = project.hasProperty("xmlReports.enabled")
-}
-
-// Spotless is used to lint and reformat source files.
-spotless {
-    java {
-        googleJavaFormat("1.12.0")
-        importOrder("java", "io", "org", "org.bson", "com.mongodb", "com.mongodb.kafka", "")
-        removeUnusedImports() // removes any unused imports
-        trimTrailingWhitespace()
-        endWithNewline()
-        indentWithSpaces()
-    }
-
-    kotlinGradle {
-        ktlint("0.31.0")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-
-    format("extraneous") {
-        target("*.xml", "*.yml", "*.md")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
-}
-
-tasks.named("compileJava") {
-    dependsOn(":spotlessApply")
 }
 
 /*

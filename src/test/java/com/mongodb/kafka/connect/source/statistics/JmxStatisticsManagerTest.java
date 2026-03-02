@@ -33,7 +33,7 @@ public class JmxStatisticsManagerTest {
 
   private static final String SOURCE_TASK_QUERY =
       "com.mongodb.kafka.connect:type=source-task-metrics,*";
-  private static final String DND_ATTRIBUTE = "connect.task.dnd";
+  private static final String DND_ATTRIBUTE = "connect-task-dnd";
 
   @Test
   @DisplayName("Should expose connect.task.dnd attribute on source-task-metrics MBeans and default to 0")

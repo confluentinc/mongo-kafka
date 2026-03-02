@@ -180,7 +180,7 @@ public class SourceTaskStatistics extends MongoMBean {
         "The total number of failed getMore commands issued by a MongoDB source task with a duration that exceeded 10000ms.");
 
     DESCRIPTIONS.put(
-        "connect.task.dnd",
+        "connect-task-dnd",
         "Whether the task should be exempt from rebalancing"
             + " (1 when snapshot/copy-existing is running, 0 otherwise).");
   }
