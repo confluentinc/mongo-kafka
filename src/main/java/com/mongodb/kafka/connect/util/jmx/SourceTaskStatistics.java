@@ -178,6 +178,11 @@ public class SourceTaskStatistics extends MongoMBean {
     DESCRIPTIONS.put(
         "getmore-commands-failed-duration-over-10000-ms",
         "The total number of failed getMore commands issued by a MongoDB source task with a duration that exceeded 10000ms.");
+
+    DESCRIPTIONS.put(
+        "connect.task.dnd",
+        "Whether the task should be exempt from rebalancing"
+            + " (1 when snapshot/copy-existing is running, 0 otherwise).");
   }
 
   private final Metric records = registerTotal("records");
@@ -193,6 +198,7 @@ public class SourceTaskStatistics extends MongoMBean {
   private final Metric getmoreCommandsSuccessful = registerMs("getmore-commands-successful");
   private final Metric initialCommandsFailed = registerMs("initial-commands-failed");
   private final Metric getmoreCommandsFailed = registerMs("getmore-commands-failed");
+  private final Metric connectTaskDnd = registerLatest("connect-task-dnd");
 
   public SourceTaskStatistics(final String name) {
     super(name);
@@ -240,6 +246,10 @@ public class SourceTaskStatistics extends MongoMBean {
 
   public Metric getGetmoreCommandsFailed() {
     return getmoreCommandsFailed;
+  }
+
+  public Metric getConnectTaskDnd() {
+    return connectTaskDnd;
   }
 
   @Override

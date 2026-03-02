@@ -60,6 +60,11 @@ public final class JmxStatisticsManager implements StatisticsManager {
   }
 
   @Override
+  public void setDNDTask(final boolean exempt) {
+    copyStatistics.getConnectTaskDnd().sample(exempt ? 1 : 0);
+  }
+
+  @Override
   public void close() {
     copyStatistics.unregister();
     streamStatistics.unregister();
