@@ -27,5 +27,7 @@ public interface StatisticsManager extends AutoCloseable {
 
   void switchToStreamStatistics();
 
+  void setDNDTask(boolean exempt);
+
   void close();
 }

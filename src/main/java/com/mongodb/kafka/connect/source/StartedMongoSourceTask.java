@@ -582,6 +582,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
 
       // Copying finished - mark copying ended and add cached result
       isCopying = false;
+      statisticsManager.setDNDTask(false);
       LOGGER.info("Finished copying existing data from the collection(s).");
       if (cachedResult != null) {
         batch.add(cachedResult);
