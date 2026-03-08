@@ -17,6 +17,8 @@ package com.mongodb.kafka.connect.util.jmx;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.management.AttributeNotFoundException;
 
 import com.mongodb.kafka.connect.util.jmx.internal.Metric;
 import com.mongodb.kafka.connect.util.jmx.internal.MongoMBean;
@@ -200,8 +202,20 @@ public class SourceTaskStatistics extends MongoMBean {
   private final Metric getmoreCommandsFailed = registerMs("getmore-commands-failed");
   private final Metric connectTaskDnd = registerLatest("connect-task-dnd");
 
+  private static final String DND_ATTRIBUTE = "connect-task-dnd";
+
   public SourceTaskStatistics(final String name) {
     super(name);
+  }
+
+  @Override
+  public Object getAttribute(final String name) throws AttributeNotFoundException {
+    if (DND_ATTRIBUTE.equals(name)) {
+      AtomicReference<Long> value = new AtomicReference<>();
+      connectTaskDnd.emit(mv -> value.set(mv.get()));
+      return value.get();
+    }
+    return super.getAttribute(name);
   }
 
   public Metric getRecords() {

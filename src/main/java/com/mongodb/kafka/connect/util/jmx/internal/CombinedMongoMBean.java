@@ -27,6 +27,7 @@ import javax.management.MBeanInfo;
 import javax.management.ReflectionException;
 
 public class CombinedMongoMBean implements DynamicMBean {
+  private static final String DND_ATTRIBUTE = "connect-task-dnd";
   private String mBeanName;
   private final MongoMBean a;
   private final Map<String, MetricValue> metricsMap = new LinkedHashMap<>();
@@ -48,6 +49,9 @@ public class CombinedMongoMBean implements DynamicMBean {
   public Object getAttribute(final String attribute)
       throws AttributeNotFoundException, MBeanException, ReflectionException {
     if (metricsMap.containsKey(attribute)) {
+      if (DND_ATTRIBUTE.equals(attribute)) {
+        return metricsMap.get(attribute).get();
+      }
       return new Attribute(attribute, metricsMap.get(attribute).get());
     } else {
       throw new AttributeNotFoundException(

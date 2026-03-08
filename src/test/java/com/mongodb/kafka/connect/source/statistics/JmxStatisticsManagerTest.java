@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.management.ManagementFactory;
 import java.util.Set;
-import javax.management.Attribute;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
@@ -51,8 +50,8 @@ public class JmxStatisticsManagerTest {
       }
       assertNotNull(mbeanName, "source-task-metrics MBean should be registered");
 
-      Attribute attr = (Attribute) mBeanServer.getAttribute(mbeanName, DND_ATTRIBUTE);
-      assertEquals(0L, attr.getValue(), "Default value should be 0 (revocable)");
+      Long value = (Long) mBeanServer.getAttribute(mbeanName, DND_ATTRIBUTE);
+      assertEquals(0L, value, "Default value should be 0 (revocable)");
     } finally {
       manager.close();
     }
@@ -76,16 +75,16 @@ public class JmxStatisticsManagerTest {
       assertNotNull(copyBean, "copy-existing MBean should be registered");
 
       // Default: 0
-      assertEquals(0L, ((Attribute) mBeanServer.getAttribute(copyBean, DND_ATTRIBUTE)).getValue());
+      assertEquals(0L, (Long) mBeanServer.getAttribute(copyBean, DND_ATTRIBUTE));
 
       // Set exempt (simulates copy-existing start)
       manager.setDNDTask(true);
-      assertEquals(1L, ((Attribute) mBeanServer.getAttribute(copyBean, DND_ATTRIBUTE)).getValue(),
+      assertEquals(1L, (Long) mBeanServer.getAttribute(copyBean, DND_ATTRIBUTE),
           "Copy bean should be 1 (exempt) during copy-existing");
 
       // Clear exempt (simulates copy-existing finish)
       manager.setDNDTask(false);
-      assertEquals(0L, ((Attribute) mBeanServer.getAttribute(copyBean, DND_ATTRIBUTE)).getValue(),
+      assertEquals(0L, (Long) mBeanServer.getAttribute(copyBean, DND_ATTRIBUTE),
           "Copy bean should be 0 (revocable) after copy-existing completes");
     } finally {
       manager.close();
@@ -127,8 +126,8 @@ public class JmxStatisticsManagerTest {
       assertNotNull(mbeanName, "source-task-metrics MBean should be registered");
 
       // Without calling setDNDTask, metric should stay at 0
-      Attribute attr = (Attribute) mBeanServer.getAttribute(mbeanName, DND_ATTRIBUTE);
-      assertEquals(0L, attr.getValue(), "Should remain 0 when copy mode is not used");
+      Long value = (Long) mBeanServer.getAttribute(mbeanName, DND_ATTRIBUTE);
+      assertEquals(0L, value, "Should remain 0 when copy mode is not used");
     } finally {
       manager.close();
     }
