@@ -15,52 +15,52 @@
  */
 package com.mongodb.kafka.connect.util.jmx.internal;
 
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.management.Attribute;
 import javax.management.AttributeList;
 import javax.management.AttributeNotFoundException;
 import javax.management.DynamicMBean;
-import javax.management.MBeanException;
+import javax.management.MBeanAttributeInfo;
 import javax.management.MBeanInfo;
-import javax.management.ReflectionException;
 
-public class CombinedMongoMBean implements DynamicMBean {
+/**
+ * A separate MBean that exposes only the connect-task-dnd metric. Registered with an ObjectName
+ * that includes task=&lt;numeric_id&gt; so that downstream consumers (e.g. ce-kafka's
+ * parseTaskExemptResponse) can parse the task id as an integer.
+ */
+public class TaskStateDndMBean implements DynamicMBean {
+
+  private static final String DND_ATTRIBUTE = "connect-task-dnd";
+  private final AtomicLong connectTaskDnd = new AtomicLong(0);
   private String mBeanName;
-  private final MongoMBean a;
-  private final Map<String, MetricValue> metricsMap = new LinkedHashMap<>();
 
-  public <T extends MongoMBean> CombinedMongoMBean(final String mBeanName, final T a, final T b) {
+  public TaskStateDndMBean(final String mBeanName) {
     this.mBeanName = mBeanName;
-    this.a = a;
-    // combine values:
-    Map<String, MetricValue> metricsMap1 = new HashMap<>();
-    a.emit(value1 -> metricsMap1.put(value1.getName(), value1));
-    b.emit(
-        value2 -> {
-          MetricValue value1 = metricsMap1.get(value2.getName());
-          metricsMap.put(value2.getName(), value2.combine(value1));
-        });
+  }
+
+  public void setDnd(final boolean exempt) {
+    connectTaskDnd.set(exempt ? 1 : 0);
+  }
+
+  public long getDnd() {
+    return connectTaskDnd.get();
   }
 
   @Override
-  public Object getAttribute(final String attribute)
-      throws AttributeNotFoundException, MBeanException, ReflectionException {
-    if (metricsMap.containsKey(attribute)) {
-      return new Attribute(attribute, metricsMap.get(attribute).get());
-    } else {
-      throw new AttributeNotFoundException(
-          "getAttribute failed: value not found for: " + attribute);
+  public Object getAttribute(final String attribute) throws AttributeNotFoundException {
+    if (DND_ATTRIBUTE.equals(attribute)) {
+      return connectTaskDnd.get();
     }
+    throw new AttributeNotFoundException(
+        "getAttribute failed: value not found for: " + attribute);
   }
 
   @Override
   public AttributeList getAttributes(final String[] attributes) {
     AttributeList list = new AttributeList();
     for (String name : attributes) {
-      if (metricsMap.containsKey(name)) {
-        list.add(new Attribute(name, metricsMap.get(name).get()));
+      if (DND_ATTRIBUTE.equals(name)) {
+        list.add(new Attribute(name, connectTaskDnd.get()));
       }
     }
     return list;
@@ -68,13 +68,22 @@ public class CombinedMongoMBean implements DynamicMBean {
 
   @Override
   public MBeanInfo getMBeanInfo() {
-    // info is the same for both MBeans provided in constructor
-    return a.getMBeanInfo();
+    MBeanAttributeInfo[] attrs =
+        new MBeanAttributeInfo[] {
+          new MBeanAttributeInfo(
+              DND_ATTRIBUTE,
+              long.class.getName(),
+              "Whether the task should be exempt from rebalancing"
+                  + " (1 when snapshot/copy-existing is running, 0 otherwise).",
+              true,
+              false,
+              false)
+        };
+    return new MBeanInfo(this.getClass().getName(), null, attrs, null, null, null);
   }
 
   @Override
-  public Object invoke(final String actionName, final Object[] params, final String[] signature)
-      throws MBeanException, ReflectionException {
+  public Object invoke(final String actionName, final Object[] params, final String[] signature) {
     throw new UnsupportedOperationException();
   }
 

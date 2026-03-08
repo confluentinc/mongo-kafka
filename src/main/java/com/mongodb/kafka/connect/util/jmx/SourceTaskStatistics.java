@@ -17,8 +17,6 @@ package com.mongodb.kafka.connect.util.jmx;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.management.AttributeNotFoundException;
 
 import com.mongodb.kafka.connect.util.jmx.internal.Metric;
 import com.mongodb.kafka.connect.util.jmx.internal.MongoMBean;
@@ -181,10 +179,6 @@ public class SourceTaskStatistics extends MongoMBean {
         "getmore-commands-failed-duration-over-10000-ms",
         "The total number of failed getMore commands issued by a MongoDB source task with a duration that exceeded 10000ms.");
 
-    DESCRIPTIONS.put(
-        "connect-task-dnd",
-        "Whether the task should be exempt from rebalancing"
-            + " (1 when snapshot/copy-existing is running, 0 otherwise).");
   }
 
   private final Metric records = registerTotal("records");
@@ -200,22 +194,8 @@ public class SourceTaskStatistics extends MongoMBean {
   private final Metric getmoreCommandsSuccessful = registerMs("getmore-commands-successful");
   private final Metric initialCommandsFailed = registerMs("initial-commands-failed");
   private final Metric getmoreCommandsFailed = registerMs("getmore-commands-failed");
-  private final Metric connectTaskDnd = registerLatest("connect-task-dnd");
-
-  private static final String DND_ATTRIBUTE = "connect-task-dnd";
-
   public SourceTaskStatistics(final String name) {
     super(name);
-  }
-
-  @Override
-  public Object getAttribute(final String name) throws AttributeNotFoundException {
-    if (DND_ATTRIBUTE.equals(name)) {
-      AtomicReference<Long> value = new AtomicReference<>();
-      connectTaskDnd.emit(mv -> value.set(mv.get()));
-      return value.get();
-    }
-    return super.getAttribute(name);
   }
 
   public Metric getRecords() {
@@ -260,10 +240,6 @@ public class SourceTaskStatistics extends MongoMBean {
 
   public Metric getGetmoreCommandsFailed() {
     return getmoreCommandsFailed;
-  }
-
-  public Metric getConnectTaskDnd() {
-    return connectTaskDnd;
   }
 
   @Override
