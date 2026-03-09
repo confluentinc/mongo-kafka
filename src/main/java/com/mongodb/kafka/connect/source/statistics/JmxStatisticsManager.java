@@ -91,8 +91,7 @@ public final class JmxStatisticsManager implements StatisticsManager {
     return "com.mongodb.kafka.connect:type=source-task-metrics,connector="
         + connectorName
         + ",task="
-        + id
-        + ",context=task";
+        + id;
   }
 
   public static String getConnectorName(final Map<String, String> props) {
