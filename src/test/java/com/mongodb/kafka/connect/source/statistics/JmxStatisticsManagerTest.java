@@ -38,8 +38,9 @@ public class JmxStatisticsManagerTest {
     MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
     Set<ObjectName> results = mBeanServer.queryNames(new ObjectName(SOURCE_TASK_QUERY), null);
     for (ObjectName name : results) {
-      String n = name.toString();
-      if (n.contains(connectorName) && n.contains("context=task")) {
+      String connector = name.getKeyProperty("connector");
+      String task = name.getKeyProperty("task");
+      if (connectorName.equals(connector) && task != null && !task.startsWith("source-task")) {
         return name;
       }
     }
@@ -53,7 +54,7 @@ public class JmxStatisticsManagerTest {
     try {
       MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
       ObjectName dndBean = findDndMBean("test-dnd-default");
-      assertNotNull(dndBean, "DND MBean with context=task should be registered");
+      assertNotNull(dndBean, "DND MBean should be registered");
 
       Long value = (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE);
       assertEquals(0L, value, "Default value should be 0 (revocable)");
@@ -69,7 +70,7 @@ public class JmxStatisticsManagerTest {
     try {
       MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
       ObjectName dndBean = findDndMBean("test-dnd-transitions");
-      assertNotNull(dndBean, "DND MBean with context=task should be registered");
+      assertNotNull(dndBean, "DND MBean should be registered");
 
       // Default: 0
       assertEquals(0L, (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE));
@@ -112,7 +113,7 @@ public class JmxStatisticsManagerTest {
     JmxStatisticsManager manager = new JmxStatisticsManager(false, "test-dnd-taskid");
     try {
       ObjectName dndBean = findDndMBean("test-dnd-taskid");
-      assertNotNull(dndBean, "DND MBean with context=task should be registered");
+      assertNotNull(dndBean, "DND MBean should be registered");
       String taskValue = dndBean.getKeyProperty("task");
       assertNotNull(taskValue, "task property should exist");
       // Should NOT contain bean type prefixes like "source-task-" or "source-task-copy-existing-"
@@ -130,7 +131,7 @@ public class JmxStatisticsManagerTest {
     try {
       MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
       ObjectName dndBean = findDndMBean("test-dnd-nocopy");
-      assertNotNull(dndBean, "DND MBean with context=task should be registered");
+      assertNotNull(dndBean, "DND MBean should be registered");
 
       // Without calling setDNDTask, metric should stay at 0
       Long value = (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE);

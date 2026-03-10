@@ -32,7 +32,7 @@ public class MongoMBean implements DynamicMBean {
 
   private String mBeanName;
   private final List<Metric> metrics = new ArrayList<>();
-  private final Map<String, MetricValue> metricsMap = new HashMap<>();
+  protected final Map<String, MetricValue> metricsMap = new HashMap<>();
 
   protected MongoMBean(final String mBeanName) {
     this.mBeanName = mBeanName;
