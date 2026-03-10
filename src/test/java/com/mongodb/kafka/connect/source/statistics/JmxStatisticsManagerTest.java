@@ -125,6 +125,52 @@ public class JmxStatisticsManagerTest {
   }
 
   @Test
+  @DisplayName("End-to-end: DND metric follows copy-existing lifecycle")
+  void testDndMetricFollowsCopyExistingLifecycle() throws Exception {
+    // Simulates the full copy-existing flow as done by MongoSourceTask and StartedMongoSourceTask:
+    // 1. Task starts with copy-existing enabled -> setDNDTask(true)
+    // 2. Copy-existing completes -> setDNDTask(false), switchToStreamStatistics()
+    // 3. Task closes -> MBeans unregistered
+
+    String connectorName = "test-dnd-e2e";
+    MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
+
+    // Step 1: Task starts with copy-existing (mirrors MongoSourceTask.start())
+    JmxStatisticsManager manager = new JmxStatisticsManager(true, connectorName);
+    try {
+      ObjectName dndBean = findDndMBean(connectorName);
+      assertNotNull(dndBean, "DND MBean should be registered on startup");
+
+      // Before setDNDTask, default is 0
+      assertEquals(0L, (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
+          "DND should be 0 before copy-existing starts");
+
+      // MongoSourceTask.start() calls setDNDTask(true) when shouldCopyData is true
+      manager.setDNDTask(true);
+      assertEquals(1L, (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
+          "DND should be 1 while copy-existing is running");
+
+      // Step 2: Copy-existing completes (mirrors StartedMongoSourceTask.getNextBatch())
+      manager.setDNDTask(false);
+      manager.switchToStreamStatistics();
+      assertEquals(0L, (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
+          "DND should be 0 after copy-existing completes and streaming begins");
+
+      // Verify the DND MBean is still accessible after switching to stream mode
+      assertNotNull(findDndMBean(connectorName),
+          "DND MBean should remain registered after switching to stream statistics");
+    } finally {
+      // Step 3: Task closes
+      manager.close();
+    }
+
+    // Verify DND MBean is unregistered after close
+    ObjectName dndBeanAfterClose = findDndMBean(connectorName);
+    assertEquals(null, dndBeanAfterClose,
+        "DND MBean should be unregistered after close");
+  }
+
+  @Test
   @DisplayName("Should keep connect-task-dnd at 0 when copy mode is not used")
   void testNoCopyModeKeepsDndAtZero() throws Exception {
     JmxStatisticsManager manager = new JmxStatisticsManager(false, "test-dnd-nocopy");
