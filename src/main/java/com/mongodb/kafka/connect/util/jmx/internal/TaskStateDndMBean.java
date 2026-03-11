@@ -15,6 +15,8 @@
  */
 package com.mongodb.kafka.connect.util.jmx.internal;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 import javax.management.AttributeNotFoundException;
 
 /**
@@ -26,26 +28,29 @@ public class TaskStateDndMBean extends MongoMBean {
 
   private static final String DND_ATTRIBUTE = "connect-task-dnd";
   private final LatestMetric connectTaskDnd = registerLatest(DND_ATTRIBUTE);
+  private final AtomicLong dndValue = new AtomicLong(0);
 
   public TaskStateDndMBean(final String mBeanName) {
     super(mBeanName);
+    connectTaskDnd.sample(0);
   }
 
   public void setDnd(final boolean exempt) {
-    connectTaskDnd.sample(exempt ? 1 : 0);
+    long val = exempt ? 1 : 0;
+    dndValue.set(val);
+    connectTaskDnd.sample(val);
   }
 
   public long getDnd() {
-    return metricsMap.get(DND_ATTRIBUTE).get();
+    return dndValue.get();
   }
 
   @Override
   public Object getAttribute(final String attribute) throws AttributeNotFoundException {
-    if (metricsMap.containsKey(attribute)) {
-      return metricsMap.get(attribute).get();
+    if (DND_ATTRIBUTE.equals(attribute)) {
+      return dndValue.get();
     }
-    throw new AttributeNotFoundException(
-        "getAttribute failed: value not found for: " + attribute);
+    throw new AttributeNotFoundException("getAttribute failed: value not found for: " + attribute);
   }
 
   @Override

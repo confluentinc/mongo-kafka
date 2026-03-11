@@ -34,6 +34,7 @@ plugins {
     checkstyle
     id("com.github.gmazzo.buildconfig") version "3.0.3"
     id("com.github.spotbugs") version "4.8.0"
+    id("com.diffplug.spotless") version "6.25.0"
     id("com.github.johnrengelman.shadow") version "6.1.0"
     id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
 }
@@ -163,9 +164,11 @@ tasks.withType<Test> {
 
     val javaVersion: Int = (project.findProperty("javaVersion") as String? ?: defaultJdkVersion.toString()).toInt()
     logger.info("Running tests using JDK$javaVersion")
-    javaLauncher.set(javaToolchains.launcherFor {
-        languageVersion.set(JavaLanguageVersion.of(javaVersion))
-    })
+    javaLauncher.set(
+        javaToolchains.launcherFor {
+            languageVersion.set(JavaLanguageVersion.of(javaVersion))
+        },
+    )
 
     systemProperties(mapOf("org.mongodb.test.uri" to System.getProperty("org.mongodb.test.uri", "")))
 
@@ -177,26 +180,39 @@ tasks.withType<Test> {
         }
     }
 
-    addTestListener(object : TestListener {
-        override fun beforeTest(testDescriptor: TestDescriptor?) {}
-        override fun beforeSuite(suite: TestDescriptor?) {}
-        override fun afterTest(testDescriptor: TestDescriptor?, result: TestResult?) {}
-        override fun afterSuite(d: TestDescriptor?, r: TestResult?) {
-            if (d != null && r != null && d.parent == null) {
-                val resultsSummary = """Tests summary:
+    addTestListener(
+        object : TestListener {
+            override fun beforeTest(testDescriptor: TestDescriptor?) {}
+
+            override fun beforeSuite(suite: TestDescriptor?) {}
+
+            override fun afterTest(
+                testDescriptor: TestDescriptor?,
+                result: TestResult?,
+            ) {}
+
+            override fun afterSuite(
+                d: TestDescriptor?,
+                r: TestResult?,
+            ) {
+                if (d != null && r != null && d.parent == null) {
+                    val resultsSummary =
+                        """Tests summary:
                     | ${r.testCount} tests,
                     | ${r.successfulTestCount} succeeded,
                     | ${r.failedTestCount} failed,
-                    | ${r.skippedTestCount} skipped""".trimMargin().replace("\n", "")
+                    | ${r.skippedTestCount} skipped
+                        """.trimMargin().replace("\n", "")
 
-                val border = "=".repeat(resultsSummary.length)
-                logger.lifecycle("\n$border")
-                logger.lifecycle("Test result: ${r.resultType}")
-                logger.lifecycle(resultsSummary)
-                logger.lifecycle("${border}\n")
+                    val border = "=".repeat(resultsSummary.length)
+                    logger.lifecycle("\n$border")
+                    logger.lifecycle("Test result: ${r.resultType}")
+                    logger.lifecycle(resultsSummary)
+                    logger.lifecycle("${border}\n")
+                }
             }
-        }
-    })
+        },
+    )
 }
 
 /*
@@ -218,6 +234,33 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     enabled = baseName.equals("main")
     reports.maybeCreate("html").isEnabled = !project.hasProperty("xmlReports.enabled")
     reports.maybeCreate("xml").isEnabled = project.hasProperty("xmlReports.enabled")
+}
+
+spotless {
+    java {
+        googleJavaFormat("1.22.0")
+        importOrder("java", "io", "org", "org.bson", "com.mongodb", "com.mongodb.kafka", "")
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+        indentWithSpaces()
+    }
+
+    kotlinGradle {
+        target("*.gradle.kts")
+        targetExclude("settings.gradle.kts")
+        ktlint()
+        trimTrailingWhitespace()
+        indentWithSpaces()
+        endWithNewline()
+    }
+
+    format("extraneous") {
+        target("*.xml", "*.yml", "*.md")
+        trimTrailingWhitespace()
+        indentWithSpaces()
+        endWithNewline()
+    }
 }
 
 /*
@@ -353,7 +396,8 @@ tasks.register("publishArchives") {
 
     doFirst {
         if (gitVersion != version) {
-            val cause = """
+            val cause =
+                """
                 | Version mismatch:
                 | =================
                 |
@@ -363,7 +407,8 @@ tasks.register("publishArchives") {
                 |$gitDiffNameOnly
                 |
                 | The project version does not match the git tag.
-                |""".trimMargin()
+                |
+                """.trimMargin()
             throw GradleException(cause)
         } else {
             println("Publishing: ${project.name} : $gitVersion")

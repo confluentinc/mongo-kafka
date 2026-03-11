@@ -34,7 +34,7 @@ public class JmxStatisticsManagerTest {
       "com.mongodb.kafka.connect:type=source-task-metrics,*";
   private static final String DND_ATTRIBUTE = "connect-task-dnd";
 
-  private ObjectName findDndMBean(String connectorName) throws Exception {
+  private ObjectName findDndMBean(final String connectorName) throws Exception {
     MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
     Set<ObjectName> results = mBeanServer.queryNames(new ObjectName(SOURCE_TASK_QUERY), null);
     for (ObjectName name : results) {
@@ -77,12 +77,16 @@ public class JmxStatisticsManagerTest {
 
       // Set exempt (simulates copy-existing start)
       manager.setDNDTask(true);
-      assertEquals(1L, (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
+      assertEquals(
+          1L,
+          (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
           "DND bean should be 1 (exempt) during copy-existing");
 
       // Clear exempt (simulates copy-existing finish)
       manager.setDNDTask(false);
-      assertEquals(0L, (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
+      assertEquals(
+          0L,
+          (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
           "DND bean should be 0 (revocable) after copy-existing completes");
     } finally {
       manager.close();
@@ -117,7 +121,8 @@ public class JmxStatisticsManagerTest {
       String taskValue = dndBean.getKeyProperty("task");
       assertNotNull(taskValue, "task property should exist");
       // Should NOT contain bean type prefixes like "source-task-" or "source-task-copy-existing-"
-      assertFalse(taskValue.startsWith("source-task"),
+      assertFalse(
+          taskValue.startsWith("source-task"),
           "task property should not be prefixed with bean type, got: " + taskValue);
     } finally {
       manager.close();
@@ -142,22 +147,29 @@ public class JmxStatisticsManagerTest {
       assertNotNull(dndBean, "DND MBean should be registered on startup");
 
       // Before setDNDTask, default is 0
-      assertEquals(0L, (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
+      assertEquals(
+          0L,
+          (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
           "DND should be 0 before copy-existing starts");
 
       // MongoSourceTask.start() calls setDNDTask(true) when shouldCopyData is true
       manager.setDNDTask(true);
-      assertEquals(1L, (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
+      assertEquals(
+          1L,
+          (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
           "DND should be 1 while copy-existing is running");
 
       // Step 2: Copy-existing completes (mirrors StartedMongoSourceTask.getNextBatch())
       manager.setDNDTask(false);
       manager.switchToStreamStatistics();
-      assertEquals(0L, (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
+      assertEquals(
+          0L,
+          (Long) mBeanServer.getAttribute(dndBean, DND_ATTRIBUTE),
           "DND should be 0 after copy-existing completes and streaming begins");
 
       // Verify the DND MBean is still accessible after switching to stream mode
-      assertNotNull(findDndMBean(connectorName),
+      assertNotNull(
+          findDndMBean(connectorName),
           "DND MBean should remain registered after switching to stream statistics");
     } finally {
       // Step 3: Task closes
@@ -166,8 +178,7 @@ public class JmxStatisticsManagerTest {
 
     // Verify DND MBean is unregistered after close
     ObjectName dndBeanAfterClose = findDndMBean(connectorName);
-    assertEquals(null, dndBeanAfterClose,
-        "DND MBean should be unregistered after close");
+    assertEquals(null, dndBeanAfterClose, "DND MBean should be unregistered after close");
   }
 
   @Test
