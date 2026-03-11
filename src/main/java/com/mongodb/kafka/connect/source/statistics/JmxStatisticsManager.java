@@ -25,6 +25,7 @@ import com.mongodb.annotations.ThreadSafe;
 import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
 import com.mongodb.kafka.connect.util.jmx.internal.CombinedMongoMBean;
 import com.mongodb.kafka.connect.util.jmx.internal.MBeanServerUtils;
+import com.mongodb.kafka.connect.util.jmx.internal.TaskStateDndMBean;
 
 @ThreadSafe
 public final class JmxStatisticsManager implements StatisticsManager {
@@ -35,6 +36,7 @@ public final class JmxStatisticsManager implements StatisticsManager {
   private final SourceTaskStatistics copyStatistics;
   private final SourceTaskStatistics streamStatistics;
   private final CombinedMongoMBean combinedStatistics;
+  private final TaskStateDndMBean dndMBean;
   private volatile SourceTaskStatistics currentStatistics;
 
   public JmxStatisticsManager(final boolean startWithCopyStatistics, final String connectorName) {
@@ -43,10 +45,12 @@ public final class JmxStatisticsManager implements StatisticsManager {
     combinedStatistics =
         new CombinedMongoMBean(
             getMBeanName(COMBINED_BEAN, connectorName), copyStatistics, streamStatistics);
+    dndMBean = new TaskStateDndMBean(getDndMBeanName(connectorName));
     currentStatistics = startWithCopyStatistics ? copyStatistics : streamStatistics;
     copyStatistics.register();
     streamStatistics.register();
     combinedStatistics.register();
+    dndMBean.register();
   }
 
   @Override
@@ -60,10 +64,16 @@ public final class JmxStatisticsManager implements StatisticsManager {
   }
 
   @Override
+  public void setDNDTask(final boolean exempt) {
+    dndMBean.setDnd(exempt);
+  }
+
+  @Override
   public void close() {
     copyStatistics.unregister();
     streamStatistics.unregister();
     combinedStatistics.unregister();
+    dndMBean.unregister();
   }
 
   private static String getMBeanName(final String mBean, final String connectorName) {
@@ -73,6 +83,14 @@ public final class JmxStatisticsManager implements StatisticsManager {
         + ",task="
         + mBean
         + "-"
+        + id;
+  }
+
+  private static String getDndMBeanName(final String connectorName) {
+    String id = MBeanServerUtils.taskIdSuffixFromCurrentThread();
+    return "com.mongodb.kafka.connect:type=source-task-metrics,connector="
+        + connectorName
+        + ",task="
         + id;
   }
 

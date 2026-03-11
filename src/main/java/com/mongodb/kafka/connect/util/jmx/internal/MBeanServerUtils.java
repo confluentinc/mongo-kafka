@@ -157,4 +157,10 @@ public final class MBeanServerUtils {
     Matcher m = Pattern.compile("(\\d)+").matcher(s);
     return m.find() ? m.group() : "unknown";
   }
+
+  public static String taskIdSuffixFromCurrentThread() {
+    String s = Thread.currentThread().getName();
+    Matcher m = Pattern.compile("(\\d+)$").matcher(s);
+    return m.find() ? m.group() : "unknown";
+  }
 }
