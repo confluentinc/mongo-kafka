@@ -118,6 +118,11 @@ public class MongoSourceConnectorIntegrationTest extends MongoKafkaTestCase {
     for (Map.Entry<String, Long> entry : empty.entrySet()) {
       assertEquals(0, entry.getValue(), entry.getKey());
     }
+    Map<String, Long> dndAttrs =
+        mBeansMap.remove(
+            "com.mongodb.kafka.connect:type=source-task-metrics,connector=MongoSourceConnector,task=0");
+    assertNotNull(dndAttrs);
+    assertDndMBeanAttributes(dndAttrs);
     for (Map<String, Long> attrs : mBeansMap.values()) {
       assertMBeanAttributesRecorded(attrs, false);
     }
@@ -140,6 +145,12 @@ public class MongoSourceConnectorIntegrationTest extends MongoKafkaTestCase {
     assertNotEquals(0, attrs.get("getmore-commands-successful"));
     assertEquals(0, attrs.get("initial-commands-failed"));
     assertEquals(0, attrs.get("getmore-commands-failed"));
+  }
+
+  private void assertDndMBeanAttributes(final Map<String, Long> attrs) {
+    assertNotNull(attrs);
+    assertEquals(0, attrs.get("connect-task-dnd"));
+    assertEquals(1, attrs.size());
   }
 
   @Test
@@ -190,7 +201,10 @@ public class MongoSourceConnectorIntegrationTest extends MongoKafkaTestCase {
         mBeansMap.get(
             "com.mongodb.kafka.connect:type=source-task-metrics,connector=MongoSourceConnector,task=source-task-0"),
         false);
-    assertEquals(3, mBeansMap.size());
+    assertDndMBeanAttributes(
+        mBeansMap.get(
+            "com.mongodb.kafka.connect:type=source-task-metrics,connector=MongoSourceConnector,task=0"));
+    assertEquals(4, mBeansMap.size());
   }
 
   @Test
