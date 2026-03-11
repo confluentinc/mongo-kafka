@@ -94,6 +94,11 @@ public final class MongoSourceTask extends SourceTask {
   private static final String NS_KEY = "ns";
   private static final int UNKNOWN_FIELD_ERROR = 40415;
   private static final int FAILED_TO_PARSE_ERROR = 9;
+  /**
+   * Since this is a single task connector, directly having task ID as "0" is safe.
+   * This should be passed from MongoSourceConnector.taskConfigs in case of multiple tasks.
+   */
+  public static final String TASK_ID_ZERO = "0";
 
   private StartedMongoSourceTask startedTask;
 

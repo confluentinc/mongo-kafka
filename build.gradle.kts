@@ -19,6 +19,7 @@ import java.io.ByteArrayOutputStream
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import org.cyclonedx.gradle.CycloneDxTask
 
 buildscript {
     repositories {
@@ -34,13 +35,14 @@ plugins {
     checkstyle
     id("com.github.gmazzo.buildconfig") version "3.0.3"
     id("com.github.spotbugs") version "4.8.0"
-    id("com.diffplug.spotless") version "6.25.0"
+    id("com.diffplug.spotless") version "5.17.1"
     id("com.github.johnrengelman.shadow") version "6.1.0"
     id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
+    id("org.cyclonedx.bom") version "1.7.3"
 }
 
 group = "org.mongodb.kafka"
-version = "2.0.1"
+version = "2.0.2"
 description = "The official MongoDB Apache Kafka Connect Connector."
 
 repositories {
@@ -51,19 +53,40 @@ repositories {
 
 extra.apply {
     set("mongodbDriverVersion", "[4.7,4.7.99]")
-    set("kafkaVersion", "3.8.1")
-    set("avroVersion", "1.12.0")
+    set("kafkaVersion", "3.9.1")
+    set("avroVersion", "1.12.1")
+    set("connectUtilsVersion", "1.1.0")
+    set("testcontainersVersion", "1.21.3")
 }
 
 val mongoAndAvroDependencies: Configuration by configurations.creating
 
 dependencies {
-    implementation("org.apache.kafka:connect-api:${project.extra["kafkaVersion"]}")
+    // TODO: Remove this override once Checkstyle updates its doxia-core dependency.
+    // Use commons-lang3 3.18.0 to fix CVE-2025-48924 (KAFKA-460).
+    constraints {
+        add("checkstyle", "org.apache.commons:commons-lang3:3.18.0") {
+            because("CVE-2025-48924: Uncontrolled Recursion vulnerability in Apache Commons Lang")
+        }
+    }
+
+    // TODO: Remove this override once Kafka updates the dependency.
+    // Use lz4-java 1.10.2 to fix CVE-2025-12183 (KAFKA-458) and CVE-2025-66566.
+    // connect-api -> kafka-clients -> lz4-java. kafka-clients 4.1.1 still uses a vulnerable version lz4-java.
+    // Note: This only affects our declared dependencies. Deployed connectors get lz4-java from Kafka Connect.
+    // org.lz4:lz4-java:1.10.2 is a relocation POM that redirects to at.yawk.lz4:lz4-java, so we use that directly.
+    implementation("at.yawk.lz4:lz4-java:1.10.2")
+    implementation("org.apache.kafka:connect-api:${project.extra["kafkaVersion"]}") {
+        // Exclude because at.yawk.lz4:lz4-java declares it provides org.lz4:lz4-java, so Gradle fails if both are present
+        exclude(group = "org.lz4", module = "lz4-java")
+    }
     implementation("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     implementation("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    implementation("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     mongoAndAvroDependencies("org.mongodb:mongodb-driver-sync:${project.extra["mongodbDriverVersion"]}")
     mongoAndAvroDependencies("org.apache.avro:avro:${project.extra["avroVersion"]}")
+    mongoAndAvroDependencies("com.github.jcustenborder.kafka.connect:connect-utils:${project.extra["connectUtilsVersion"]}")
 
     // Unit Tests
     testImplementation(platform("org.junit:junit-bom:5.8.1"))
@@ -93,6 +116,10 @@ dependencies {
     // This lets us output logs for the integration tests which is required for tests that capture
     // logs to verify functionality.
     testImplementation("org.slf4j:slf4j-reload4j:2.0.13")
+    testImplementation(platform("org.testcontainers:testcontainers-bom:${project.extra["testcontainersVersion"]}"))
+    testImplementation("org.testcontainers:testcontainers")
+    testImplementation("org.testcontainers:junit-jupiter")
+    testImplementation("org.testcontainers:mongodb")
 }
 
 tasks.withType<JavaCompile> {
@@ -164,11 +191,9 @@ tasks.withType<Test> {
 
     val javaVersion: Int = (project.findProperty("javaVersion") as String? ?: defaultJdkVersion.toString()).toInt()
     logger.info("Running tests using JDK$javaVersion")
-    javaLauncher.set(
-        javaToolchains.launcherFor {
-            languageVersion.set(JavaLanguageVersion.of(javaVersion))
-        },
-    )
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(javaVersion))
+    })
 
     systemProperties(mapOf("org.mongodb.test.uri" to System.getProperty("org.mongodb.test.uri", "")))
 
@@ -180,39 +205,26 @@ tasks.withType<Test> {
         }
     }
 
-    addTestListener(
-        object : TestListener {
-            override fun beforeTest(testDescriptor: TestDescriptor?) {}
-
-            override fun beforeSuite(suite: TestDescriptor?) {}
-
-            override fun afterTest(
-                testDescriptor: TestDescriptor?,
-                result: TestResult?,
-            ) {}
-
-            override fun afterSuite(
-                d: TestDescriptor?,
-                r: TestResult?,
-            ) {
-                if (d != null && r != null && d.parent == null) {
-                    val resultsSummary =
-                        """Tests summary:
+    addTestListener(object : TestListener {
+        override fun beforeTest(testDescriptor: TestDescriptor?) {}
+        override fun beforeSuite(suite: TestDescriptor?) {}
+        override fun afterTest(testDescriptor: TestDescriptor?, result: TestResult?) {}
+        override fun afterSuite(d: TestDescriptor?, r: TestResult?) {
+            if (d != null && r != null && d.parent == null) {
+                val resultsSummary = """Tests summary:
                     | ${r.testCount} tests,
                     | ${r.successfulTestCount} succeeded,
                     | ${r.failedTestCount} failed,
-                    | ${r.skippedTestCount} skipped
-                        """.trimMargin().replace("\n", "")
+                    | ${r.skippedTestCount} skipped""".trimMargin().replace("\n", "")
 
-                    val border = "=".repeat(resultsSummary.length)
-                    logger.lifecycle("\n$border")
-                    logger.lifecycle("Test result: ${r.resultType}")
-                    logger.lifecycle(resultsSummary)
-                    logger.lifecycle("${border}\n")
-                }
+                val border = "=".repeat(resultsSummary.length)
+                logger.lifecycle("\n$border")
+                logger.lifecycle("Test result: ${r.resultType}")
+                logger.lifecycle(resultsSummary)
+                logger.lifecycle("${border}\n")
             }
-        },
-    )
+        }
+    })
 }
 
 /*
@@ -236,31 +248,28 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     reports.maybeCreate("xml").isEnabled = project.hasProperty("xmlReports.enabled")
 }
 
-spotless {
-    java {
-        googleJavaFormat("1.22.0")
-        importOrder("java", "io", "org", "org.bson", "com.mongodb", "com.mongodb.kafka", "")
-        removeUnusedImports()
-        trimTrailingWhitespace()
-        endWithNewline()
-        indentWithSpaces()
-    }
 
-    kotlinGradle {
-        target("*.gradle.kts")
-        targetExclude("settings.gradle.kts")
-        ktlint()
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
+// Configure CycloneDX SBOM generation
+tasks.named<CycloneDxTask>("cyclonedxBom") {
+    // Exclude test configurations from the SBOM (only include production dependencies)
+    setSkipConfigs(
+        listOf(
+            "testRuntime",
+            "testRuntimeClasspath",
+            "testCompile",
+            "testCompileClasspath",
+            "testImplementation"
+        )
+    )
+    setProjectType("application")
+    setSchemaVersion("1.5")
+    setOutputName("sbom")
+    setDestination(project.file("build"))
+}
 
-    format("extraneous") {
-        target("*.xml", "*.yml", "*.md")
-        trimTrailingWhitespace()
-        indentWithSpaces()
-        endWithNewline()
-    }
+
+tasks.named("compileJava") {
+    dependsOn(":spotlessApply")
 }
 
 /*
@@ -396,8 +405,7 @@ tasks.register("publishArchives") {
 
     doFirst {
         if (gitVersion != version) {
-            val cause =
-                """
+            val cause = """
                 | Version mismatch:
                 | =================
                 |
@@ -407,8 +415,7 @@ tasks.register("publishArchives") {
                 |$gitDiffNameOnly
                 |
                 | The project version does not match the git tag.
-                |
-                """.trimMargin()
+                |""".trimMargin()
             throw GradleException(cause)
         } else {
             println("Publishing: ${project.name} : $gitVersion")

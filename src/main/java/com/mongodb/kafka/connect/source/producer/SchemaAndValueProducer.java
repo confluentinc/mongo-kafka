@@ -22,4 +22,7 @@ import org.bson.BsonDocument;
 
 public interface SchemaAndValueProducer {
   SchemaAndValue get(BsonDocument changeStreamDocument);
+  default void checkForExtraFields(final BsonDocument changeStreamDocument) {
+    // no-op
+  }
 }
