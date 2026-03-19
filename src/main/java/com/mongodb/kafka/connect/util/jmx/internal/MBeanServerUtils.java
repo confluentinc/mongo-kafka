@@ -154,7 +154,8 @@ public final class MBeanServerUtils {
    */
   public static String taskIdFromCurrentThread() {
     String s = Thread.currentThread().getName();
-    Matcher m = Pattern.compile("(\\d)+").matcher(s);
+    Matcher m = Pattern.compile("(\\d+)$").matcher(s);
     return m.find() ? m.group() : "unknown";
   }
+
 }
