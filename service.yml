@@ -1,6 +1,6 @@
 name: mongo-kafka
 lang: java
-lang_version: "17"
+lang_version: 8
 git:
   enable: true
 codeowners:
@@ -8,13 +8,16 @@ codeowners:
 semaphore:
   enable: true
   pipeline_type: cp
+  pipeline_enable: false
+  cve_scan: true
+  extra_deploy_args: "-Dcloud -Pjenkins"
+  extra_build_args: "-Dcloud -Pjenkins"
   branches:
-    - master
-    - /^\d+\.\d+\.x$/
+    - /^v\d+\.\d+\.x$/
   promotions:
     - name: Create Tag
       pipeline_file: .semaphore/create-tag.yml
-      auto_promote_when: "result = 'passed' and branch =~ '^\\d+\\.\\d+\\.x$'"
+      auto_promote_when: "result = 'passed' and branch =~ '^v\\d+\\.\\d+\\.x$'"
   tasks:
     - name: create-mongo-kafka-tag
       branch: master
@@ -23,3 +26,5 @@ semaphore:
         - name: BRANCH_NAME
           required: true
           description: 'Branch used to create a tag for CP-patched branches (for example 2.0.x, 1.14.x). Not intended for hotfix branches.'
+sonarqube:
+  enable: true
