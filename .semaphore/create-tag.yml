@@ -15,6 +15,9 @@ blocks:
         - name: Create Tag
           commands:
             - checkout --use-cache
-            - if [ -n "$BRANCH_NAME" ]; then git checkout $BRANCH_NAME; fi
-            - ci-tools ci-update-version
-            - ci-tools ci-push-tag
+            - if [ -n "$BRANCH_NAME" ]; then git checkout "$BRANCH_NAME"; fi
+            - BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            - COMMIT_ID=$(git rev-parse --short HEAD)
+            - TAG_NAME="rc-${BRANCH}-${COMMIT_ID}"
+            - git tag "$TAG_NAME"
+            - git push origin "$TAG_NAME"
