@@ -1,0 +1,23 @@
+version: v1.0
+name: create-mongo-kafka-tag
+agent:
+  machine:
+    type: s1-prod-ubuntu24-04-amd64-1
+
+execution_time_limit:
+  hours: 1
+
+blocks:
+  - name: Create Tag
+    dependencies: []
+    task:
+      jobs:
+        - name: Create Tag
+          commands:
+            - checkout --use-cache
+            - if [ -n "$BRANCH_NAME" ]; then git checkout "$BRANCH_NAME"; fi
+            - BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            - COMMIT_ID=$(git rev-parse --short HEAD)
+            - TAG_NAME="rc-${BRANCH}-${COMMIT_ID}"
+            - git tag "$TAG_NAME"
+            - git push origin "$TAG_NAME"
