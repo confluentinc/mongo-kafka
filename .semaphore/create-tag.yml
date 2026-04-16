@@ -18,6 +18,6 @@ blocks:
             - if [ -n "$BRANCH_NAME" ]; then git checkout "$BRANCH_NAME"; fi
             - BRANCH=$(git rev-parse --abbrev-ref HEAD)
             - COMMIT_ID=$(git rev-parse --short HEAD)
-            - TAG_NAME="rc-${BRANCH}-${COMMIT_ID}"
+            - TAG_NAME="{BRANCH}-rc-${COMMIT_ID}-cloud"
             - git tag "$TAG_NAME"
             - git push origin "$TAG_NAME"
