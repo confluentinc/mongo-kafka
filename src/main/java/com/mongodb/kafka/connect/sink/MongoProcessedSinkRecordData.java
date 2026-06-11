@@ -107,7 +107,7 @@ final class MongoProcessedSinkRecordData {
       exception = e;
       if (config.logErrors()) {
         LOGGER.error(
-            "Unable to process record in topic:{} at partition:{}, offset:{}",
+            "Unable to process record from {}-{} at offset {}",
             sinkRecord.topic(),
             sinkRecord.kafkaPartition(),
             sinkRecord.kafkaOffset(),
