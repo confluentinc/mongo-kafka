@@ -244,6 +244,12 @@ final class StartedMongoSinkTask implements AutoCloseable {
   }
 
   private static void log(final Collection<SinkRecord> records, final RuntimeException e) {
-    LOGGER.error("Failed to put {} records into the sink", records.size(), e);
+    LOGGER.error(
+        "Failed to put into the sink {} record(s) at offsets {}",
+        records.size(),
+        records.stream()
+            .map(r -> r.topic() + "-" + r.kafkaPartition() + "@" + r.kafkaOffset())
+            .collect(Collectors.toList()),
+        e);
   }
 }
