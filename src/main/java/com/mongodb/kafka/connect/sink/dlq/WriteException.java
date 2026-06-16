@@ -21,23 +21,19 @@ import java.util.Locale;
 import com.mongodb.WriteError;
 
 /**
- * The {@linkplain #getMessage() message} {@linkplain Formatter format} is {@code "v=1, code=%d,
- * message=%s, details=%s"}, where {@code details} is JSON produced with {@link
- * org.bson.BsonDocument#toJson()}. We may change it in the future, in which case the version
- * (marked with {@code v}) will be incremented.
+ * The {@linkplain #getMessage() message} {@linkplain Formatter format} is {@code "v=2, code=%d"}.
+ * CC-41566: the driver {@code message} and {@code details} are intentionally excluded because they
+ * can embed record-derived content (e.g. duplicate-key values) that must not reach logs - this
+ * exception's message is logged by the Connect framework error reporter when {@code
+ * errors.log.enable=true}. The failing record itself is still delivered to the dead letter queue.
+ * The version (marked with {@code v}) is incremented whenever this format changes.
  */
 public final class WriteException extends NoStackTraceDlqException {
   private static final long serialVersionUID = 1L;
-  private static final int MESSAGE_FORMAT_VERSION = 1;
+  private static final int MESSAGE_FORMAT_VERSION = 2;
 
   public WriteException(final WriteError error) {
     super(
-        String.format(
-            Locale.ENGLISH,
-            "v=%d, code=%d, message=%s, details=%s",
-            MESSAGE_FORMAT_VERSION,
-            error.getCode(),
-            error.getMessage(),
-            error.getDetails().toJson()));
+        String.format(Locale.ENGLISH, "v=%d, code=%d", MESSAGE_FORMAT_VERSION, error.getCode()));
   }
 }
