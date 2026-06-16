@@ -77,10 +77,17 @@ class TimeseriesTimeFieldAutoConversion extends PostProcessor {
     try {
       return Optional.of(supplier.get());
     } catch (Exception e) {
+      // CC-41568: do not log e.getMessage() at INFO - DateTimeParseException embeds the raw
+      // record time-field value. Log only the field name and exception type; keep detail at TRACE.
       LOGGER.info(
+          "Failed to convert field `{}` to a valid date time, so leaving as is. Cause: {}",
+          fieldName,
+          e.getClass().getSimpleName());
+      LOGGER.trace(
           format(
               "Failed to convert field `%s` to a valid date time, so leaving as is: `%s`",
-              fieldName, e.getMessage()));
+              fieldName, e.getMessage()),
+          e);
       return Optional.empty();
     }
   }
