@@ -168,10 +168,15 @@ public final class Validators {
           try {
             consumer.accept((String) value);
           } catch (IllegalArgumentException e){
-            LOGGER.error(e.getMessage());
+            // CC-41569: the driver message can echo URI fragments (host, encoded user info,
+            // scheme). Log a static message at ERROR, keep detail at DEBUG, and throw a redacted
+            // ConfigException with a generic message.
+            LOGGER.error("Invalid {} value: connection string could not be parsed", name);
+            LOGGER.debug("Connection string validation failure detail for {}", name, e);
             throw new ConfigException(name, redactedUrl, connectionUriErrorMessage);
           } catch (Exception e) {
-            throw new ConfigException(name, redactedUrl, e.getMessage());
+            LOGGER.debug("Unexpected error validating {}", name, e);
+            throw new ConfigException(name, redactedUrl, connectionUriErrorMessage);
           }
         }));
   }

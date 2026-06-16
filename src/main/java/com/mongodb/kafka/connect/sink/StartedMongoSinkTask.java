@@ -214,17 +214,33 @@ final class StartedMongoSinkTask implements AutoCloseable {
       final boolean logErrors,
       final boolean tolerateErrors) {
     if (e instanceof MongoBulkWriteException) {
+      MongoBulkWriteException bulkWriteException = (MongoBulkWriteException) e;
       AnalyzedBatchFailedWithBulkWriteException analyzedBatch =
           new AnalyzedBatchFailedWithBulkWriteException(
               batch,
               ordered,
-              (MongoBulkWriteException) e,
+              bulkWriteException,
               errorReporter,
               StartedMongoSinkTask::log);
       if (logErrors) {
+        // CC-41566: never log the driver exception at ERROR - its message embeds record-derived
+        // dup-key values / BSON detail. Log only sanitized metadata (type, codes, counts);
+        // keep the full driver detail and the per-record breakdown at DEBUG.
         LOGGER.error(
-            "Failed to put into the sink some records, see log entries below for the details", e);
-        analyzedBatch.log();
+            "Failed to write some records into the sink: {} write error(s) with code(s) {}, "
+                + "{} write concern error(s). Exception: {}",
+            bulkWriteException.getWriteErrors().size(),
+            bulkWriteException.getWriteErrors().stream()
+                .map(writeError -> Integer.toString(writeError.getCode()))
+                .distinct()
+                .collect(Collectors.toList()),
+            bulkWriteException.getWriteConcernError() != null ? 1 : 0,
+            e.getClass().getName());
+        if (LOGGER.isDebugEnabled()) {
+          LOGGER.debug(
+              "Failed to put into the sink some records, see log entries below for the details", e);
+          analyzedBatch.log();
+        }
       }
       if (tolerateErrors) {
         analyzedBatch.report();
@@ -244,6 +260,12 @@ final class StartedMongoSinkTask implements AutoCloseable {
   }
 
   private static void log(final Collection<SinkRecord> records, final RuntimeException e) {
-    LOGGER.error("Failed to put {} records into the sink", records.size(), e);
+    // CC-41566: e (e.g. WriteException) embeds record-derived dup-key / BSON detail in its
+    // message. Log only the count and exception type at ERROR; keep full detail at DEBUG.
+    LOGGER.error(
+        "Failed to put {} records into the sink. Exception: {}",
+        records.size(),
+        e.getClass().getName());
+    LOGGER.debug("Failed to put {} records into the sink (full detail)", records.size(), e);
   }
 }
