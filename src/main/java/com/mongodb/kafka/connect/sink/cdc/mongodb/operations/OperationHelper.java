@@ -52,8 +52,8 @@ final class OperationHelper {
     } else if (!changeStreamDocument.get(DOCUMENT_KEY).isDocument()) {
       throw new DataException(
           format(
-              "Unexpected %s field type, expecting a document but found `%s`",
-              DOCUMENT_KEY, changeStreamDocument.get(DOCUMENT_KEY)));
+              "Unexpected %s field type, expecting a document but found a value of type `%s`",
+              DOCUMENT_KEY, changeStreamDocument.get(DOCUMENT_KEY).getBsonType()));
     }
 
     return changeStreamDocument.getDocument(DOCUMENT_KEY);
@@ -69,8 +69,8 @@ final class OperationHelper {
     } else if (!changeStreamDocument.get(FULL_DOCUMENT).isDocument()) {
       throw new DataException(
           format(
-              "Unexpected %s field type, expecting a document but found `%s`",
-              FULL_DOCUMENT, changeStreamDocument.get(FULL_DOCUMENT)));
+              "Unexpected %s field type, expecting a document but found a value of type `%s`",
+              FULL_DOCUMENT, changeStreamDocument.get(FULL_DOCUMENT).getBsonType()));
     }
 
     return changeStreamDocument.getDocument(FULL_DOCUMENT);
@@ -82,8 +82,8 @@ final class OperationHelper {
     } else if (!changeStreamDocument.get(UPDATE_DESCRIPTION).isDocument()) {
       throw new DataException(
           format(
-              "Unexpected %s field type, expected a document found `%s`",
-              UPDATE_DESCRIPTION, changeStreamDocument.get(UPDATE_DESCRIPTION)));
+              "Unexpected %s field type, expected a document but found a value of type `%s`",
+              UPDATE_DESCRIPTION, changeStreamDocument.get(UPDATE_DESCRIPTION).getBsonType()));
     }
 
     BsonDocument updateDescription = changeStreamDocument.getDocument(UPDATE_DESCRIPTION);
@@ -101,8 +101,10 @@ final class OperationHelper {
     } else if (!updateDescription.get(UPDATED_FIELDS).isDocument()) {
       throw new DataException(
           format(
-              "Unexpected %s field type, expected a document but found `%s`",
-              UPDATE_DESCRIPTION, updateDescription));
+              "Unexpected %s.%s field type, expected a document but found a value of type `%s`",
+              UPDATE_DESCRIPTION,
+              UPDATED_FIELDS,
+              updateDescription.get(UPDATED_FIELDS).getBsonType()));
     }
 
     if (!updateDescription.containsKey(REMOVED_FIELDS)) {
@@ -110,26 +112,26 @@ final class OperationHelper {
     } else if (!updateDescription.get(REMOVED_FIELDS).isArray()) {
       throw new DataException(
           format(
-              "Unexpected %s field type, expected an array but found `%s`",
-              REMOVED_FIELDS, updateDescription.get(REMOVED_FIELDS)));
+              "Unexpected %s field type, expected an array but found a value of type `%s`",
+              REMOVED_FIELDS, updateDescription.get(REMOVED_FIELDS).getBsonType()));
     }
 
     if (updateDescription.containsKey(TRUNCATED_ARRAYS)
         && !updateDescription.get(TRUNCATED_ARRAYS).isArray()) {
       throw new DataException(
           format(
-              "Unexpected %s field type, expected an array but found `%s`",
+              "Unexpected %s field type, expected an array but found a value of type `%s`",
               TRUNCATED_ARRAYS,
-              updateDescription.get(TRUNCATED_ARRAYS)));
+              updateDescription.get(TRUNCATED_ARRAYS).getBsonType()));
     }
 
     if (updateDescription.containsKey(DISAMBIGUATED_PATHS)
         && !updateDescription.get(DISAMBIGUATED_PATHS).isDocument()) {
       throw new DataException(
           format(
-              "Unexpected %s field type, expected an array but found `%s`",
+              "Unexpected %s field type, expected an array but found a value of type `%s`",
               DISAMBIGUATED_PATHS,
-              updateDescription.get(DISAMBIGUATED_PATHS)));
+              updateDescription.get(DISAMBIGUATED_PATHS).getBsonType()));
     }
 
     BsonDocument updatedFields = updateDescription.getDocument(UPDATED_FIELDS);
@@ -139,8 +141,8 @@ final class OperationHelper {
       if (!removedField.isString()) {
         throw new DataException(
             format(
-                "Unexpected value type in %s, expected an string but found `%s`",
-                REMOVED_FIELDS, removedField));
+                "Unexpected value type in %s, expected a string but found a value of type `%s`",
+                REMOVED_FIELDS, removedField.getBsonType()));
       }
       unsetDocument.append(removedField.asString().getValue(), EMPTY_STRING);
     }

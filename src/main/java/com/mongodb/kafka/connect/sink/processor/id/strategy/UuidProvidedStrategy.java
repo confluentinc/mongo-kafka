@@ -50,7 +50,9 @@ abstract class UuidProvidedStrategy extends ProvidedStrategy {
           constructUuidObjectFromString(id.asString().getValue()), UuidRepresentation.STANDARD);
     }
 
-    throw new DataException(format("UUID cannot be constructed from provided value: `%s`", id));
+    // CC-41565: do not embed the raw record value; report only its BSON type.
+    throw new DataException(
+        format("UUID cannot be constructed from a provided value of type `%s`", id.getBsonType()));
   }
 
   private UUID constructUuidObjectFromString(final String uuid) {
@@ -67,6 +69,8 @@ abstract class UuidProvidedStrategy extends ProvidedStrategy {
       // ignore
     }
 
-    throw new DataException(format("UUID cannot be constructed from provided value: `%s`", uuid));
+    // CC-41565: do not embed the raw record string value; report only its length.
+    throw new DataException(
+        format("UUID cannot be constructed from the provided string value (length=%d)", uuid.length()));
   }
 }
