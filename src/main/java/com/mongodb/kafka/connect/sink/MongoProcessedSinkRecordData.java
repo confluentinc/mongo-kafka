@@ -106,8 +106,17 @@ final class MongoProcessedSinkRecordData {
     } catch (Exception e) {
       exception = e;
       if (config.logErrors()) {
+        // CC-41565: do not pass the exception object to ERROR - its message (from CDC handlers,
+        // id strategies, etc.) can embed record key/value content. Log only the exception type;
+        // keep the full exception at DEBUG. (See also the sanitized throw-site messages.)
         LOGGER.error(
-            "Unable to process record in topic:{} at partition:{}, offset:{}",
+            "Unable to process record in topic:{} at partition:{}, offset:{}. Cause: {}",
+            sinkRecord.topic(),
+            sinkRecord.kafkaPartition(),
+            sinkRecord.kafkaOffset(),
+            e.getClass().getName());
+        LOGGER.debug(
+            "Unable to process record in topic:{} at partition:{}, offset:{} (full detail)",
             sinkRecord.topic(),
             sinkRecord.kafkaPartition(),
             sinkRecord.kafkaOffset(),
