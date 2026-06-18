@@ -168,10 +168,12 @@ public final class Validators {
           try {
             consumer.accept((String) value);
           } catch (IllegalArgumentException e){
-            LOGGER.error(e.getMessage());
+            LOGGER.error("Invalid {} value: connection string could not be parsed", name);
+            LOGGER.debug("Connection string validation failure detail for {}", name, e);
             throw new ConfigException(name, redactedUrl, connectionUriErrorMessage);
           } catch (Exception e) {
-            throw new ConfigException(name, redactedUrl, e.getMessage());
+            LOGGER.debug("Unexpected error validating {}", name, e);
+            throw new ConfigException(name, redactedUrl, connectionUriErrorMessage);
           }
         }));
   }
