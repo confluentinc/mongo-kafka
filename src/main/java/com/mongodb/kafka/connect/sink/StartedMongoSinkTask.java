@@ -214,16 +214,29 @@ final class StartedMongoSinkTask implements AutoCloseable {
       final boolean logErrors,
       final boolean tolerateErrors) {
     if (e instanceof MongoBulkWriteException) {
+      MongoBulkWriteException bulkWriteException = (MongoBulkWriteException) e;
       AnalyzedBatchFailedWithBulkWriteException analyzedBatch =
           new AnalyzedBatchFailedWithBulkWriteException(
               batch,
               ordered,
-              (MongoBulkWriteException) e,
+              bulkWriteException,
               errorReporter,
               StartedMongoSinkTask::log);
       if (logErrors) {
         LOGGER.error(
+            "Failed to write some records into the sink: {} write error(s) with code(s) {}, "
+                + "{} write concern error(s). Exception: {}",
+            bulkWriteException.getWriteErrors().size(),
+            bulkWriteException.getWriteErrors().stream()
+                .map(writeError -> Integer.toString(writeError.getCode()))
+                .distinct()
+                .collect(Collectors.toList()),
+            bulkWriteException.getWriteConcernError() != null ? 1 : 0,
+            e.getClass().getName());
+        LOGGER.debug(
             "Failed to put into the sink some records, see log entries below for the details", e);
+        // Per-record breakdown: routes through the sanitized log() method below, so each entry is
+        // logged at ERROR without record content (full per-record detail stays at DEBUG).
         analyzedBatch.log();
       }
       if (tolerateErrors) {
@@ -244,6 +257,10 @@ final class StartedMongoSinkTask implements AutoCloseable {
   }
 
   private static void log(final Collection<SinkRecord> records, final RuntimeException e) {
-    LOGGER.error("Failed to put {} records into the sink", records.size(), e);
+    LOGGER.error(
+        "Failed to put {} records into the sink. Exception: {}",
+        records.size(),
+        e.getClass().getName());
+    LOGGER.debug("Failed to put {} records into the sink (full detail)", records.size(), e);
   }
 }
