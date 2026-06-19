@@ -78,9 +78,14 @@ class TimeseriesTimeFieldAutoConversion extends PostProcessor {
       return Optional.of(supplier.get());
     } catch (Exception e) {
       LOGGER.info(
+          "Failed to convert field `{}` to a valid date time, so leaving as is. Cause: {}",
+          fieldName,
+          e.getClass().getSimpleName());
+      LOGGER.trace(
           format(
               "Failed to convert field `%s` to a valid date time, so leaving as is: `%s`",
-              fieldName, e.getMessage()));
+              fieldName, e.getMessage()),
+          e);
       return Optional.empty();
     }
   }
