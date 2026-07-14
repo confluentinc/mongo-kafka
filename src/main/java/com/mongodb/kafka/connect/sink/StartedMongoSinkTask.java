@@ -167,7 +167,9 @@ final class StartedMongoSinkTask implements AutoCloseable {
       statistics.getBatchWritesFailed().sample(writeTime.getElapsedTime().toMillis());
       statistics.getRecordsFailed().sample(batch.size());
       if (config.tolerateDataErrors() && !(e instanceof MongoBulkWriteException)) {
-        throw new DataException("non Data Error, fail the connector.", e);
+        LOGGER.trace("non Data Error, failing the connector", e);
+        throw new DataException(
+            "non Data Error, fail the connector. Exception type: " + e.getClass().getName());
       }
       handleTolerableWriteException(
           batch.stream()
@@ -215,6 +217,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
       final boolean tolerateErrors) {
     if (e instanceof MongoBulkWriteException) {
       MongoBulkWriteException bulkWriteException = (MongoBulkWriteException) e;
+      LOGGER.trace("Failed to write some records into the sink", bulkWriteException);
       AnalyzedBatchFailedWithBulkWriteException analyzedBatch =
           new AnalyzedBatchFailedWithBulkWriteException(
               batch,
@@ -242,16 +245,30 @@ final class StartedMongoSinkTask implements AutoCloseable {
       if (tolerateErrors) {
         analyzedBatch.report();
       } else {
-        throw new DataException(e);
+        throw new DataException(
+            String.format(
+                "Failed to write some records into the sink: %d write error(s) with code(s) %s, "
+                    + "%d write concern error(s)",
+                bulkWriteException.getWriteErrors().size(),
+                bulkWriteException.getWriteErrors().stream()
+                    .map(writeError -> Integer.toString(writeError.getCode()))
+                    .distinct()
+                    .collect(Collectors.toList()),
+                bulkWriteException.getWriteConcernError() != null ? 1 : 0));
       }
     } else {
+      LOGGER.trace("Failed to write records into the sink", e);
       if (logErrors) {
         log(batch, e);
       }
       if (tolerateErrors) {
-        batch.forEach(record -> errorReporter.report(record, e));
+        DataException sanitized =
+            new DataException(
+                "Failed to write records into the sink. Exception type: " + e.getClass().getName());
+        batch.forEach(record -> errorReporter.report(record, sanitized));
       } else {
-        throw new DataException(e);
+        throw new DataException(
+            "Failed to write records into the sink. Exception type: " + e.getClass().getName());
       }
     }
   }
