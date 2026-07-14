@@ -111,15 +111,7 @@ final class MongoProcessedSinkRecordData {
           sinkRecord.kafkaPartition(),
           sinkRecord.kafkaOffset(),
           e);
-      DataException sanitized =
-          new DataException(
-              String.format(
-                  "Unable to process record in topic:%s at partition:%s, offset:%s. "
-                      + "Exception type: %s",
-                  sinkRecord.topic(),
-                  sinkRecord.kafkaPartition(),
-                  sinkRecord.kafkaOffset(),
-                  e.getClass().getName()));
+      DataException sanitized = new DataException(e.getMessage());
       exception = sanitized;
       if (config.logErrors()) {
         LOGGER.error(
