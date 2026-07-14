@@ -21,24 +21,22 @@ import java.util.Locale;
 import com.mongodb.bulk.WriteConcernError;
 
 /**
- * The {@linkplain #getMessage() message} {@linkplain Formatter format} is {@code "v=1, code=%d,
- * codeName=%s, message=%s, details=%s"}, where {@code details} is JSON produced with {@link
- * org.bson.BsonDocument#toJson()}. We may change it in the future, in which case the version
- * (marked with {@code v}) will be incremented.
+ * The {@linkplain #getMessage() message} {@linkplain Formatter format} is {@code "v=2, code=%d,
+ * codeName=%s"}. {@link WriteConcernError#getMessage()}/{@link WriteConcernError#getDetails()}
+ * are omitted since they embed record field values. We may change the format again in the
+ * future, in which case the version (marked with {@code v}) will be incremented.
  */
 public final class WriteConcernException extends NoStackTraceDlqException {
   private static final long serialVersionUID = 1L;
-  private static final int MESSAGE_FORMAT_VERSION = 1;
+  private static final int MESSAGE_FORMAT_VERSION = 2;
 
   public WriteConcernException(final WriteConcernError error) {
     super(
         String.format(
             Locale.ENGLISH,
-            "v=%d, code=%d, codeName=%s, message=%s, details=%s",
+            "v=%d, code=%d, codeName=%s",
             MESSAGE_FORMAT_VERSION,
             error.getCode(),
-            error.getCodeName(),
-            error.getMessage(),
-            error.getDetails().toJson()));
+            error.getCodeName()));
   }
 }
