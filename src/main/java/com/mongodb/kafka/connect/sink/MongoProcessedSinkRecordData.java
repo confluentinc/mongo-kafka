@@ -19,6 +19,7 @@ package com.mongodb.kafka.connect.sink;
 import java.util.Optional;
 import java.util.function.Supplier;
 
+import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,7 +105,16 @@ final class MongoProcessedSinkRecordData {
     try {
       return supplier.get();
     } catch (Exception e) {
-      exception = e;
+      DataException sanitized =
+          new DataException(
+              String.format(
+                  "Unable to process record in topic:%s at partition:%s, offset:%s. "
+                      + "Exception type: %s",
+                  sinkRecord.topic(),
+                  sinkRecord.kafkaPartition(),
+                  sinkRecord.kafkaOffset(),
+                  e.getClass().getName()));
+      exception = sanitized;
       if (config.logErrors()) {
         LOGGER.error(
             "Unable to process record in topic:{} at partition:{}, offset:{}. Cause: {}",
@@ -120,7 +130,7 @@ final class MongoProcessedSinkRecordData {
             e);
       }
       if (!(config.tolerateErrors() || config.tolerateDataErrors())) {
-        throw e;
+        throw sanitized;
       }
     }
     return Optional.empty();

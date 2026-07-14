@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -191,13 +192,35 @@ final class StartedMongoSinkTaskTest {
             asList(0, 1, 2),
             asList(
                 // batch1
-                new Report(0, MongoCommandException.class),
-                new Report(1, MongoCommandException.class),
+                new Report(0, DataException.class),
+                new Report(1, DataException.class),
                 // batch2
-                new Report(2, MongoCommandException.class)));
+                new Report(2, DataException.class)));
     task.put(recordsAndExpectations.records());
     recordsAndExpectations.assertExpectations(
         client.capturedBulkWrites().get(DEFAULT_NAMESPACE), errorReporter.reported());
+  }
+
+  @Test
+  void putTolerateAllAnyErrorDoesNotLeakRecordDataViaReport() {
+    String sensitiveMessage = "Invalid BSON field name: dup key { memberCode: \"1234567890\" }";
+    properties.put(MongoSinkTopicConfig.ERRORS_TOLERANCE_CONFIG, ErrorTolerance.ALL.value());
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(new IllegalArgumentException(sensitiveMessage)));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter);
+
+    task.put(singletonList(Records.simpleValid(TEST_TOPIC, 0)));
+
+    assertEquals(1, errorReporter.reported().size());
+    Throwable reported = errorReporter.reported().get(0).exception();
+    assertEquals(DataException.class, reported.getClass());
+    assertFalse(reported.getMessage().contains("1234567890"));
+    assertFalse(reported.getMessage().contains("memberCode"));
+    assertNull(reported.getCause());
   }
 
   @Test
@@ -239,6 +262,45 @@ final class StartedMongoSinkTaskTest {
     assertThrows(DataException.class, () -> task.put(recordsAndExpectations.records()));
     recordsAndExpectations.assertExpectations(
         client.capturedBulkWrites().get(DEFAULT_NAMESPACE), errorReporter.reported());
+  }
+
+  @Test
+  void putTolerateNoneWriteErrorDoesNotLeakRecordDataUncaught() {
+    String sensitiveMessage =
+        "E11000 duplicate key error collection: UMV.MemberAdditionalDetails index: memberCode_1 "
+            + "dup key: { memberCode: \"1234567890\" }";
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(
+                    new MongoBulkWriteException(
+                        BulkWriteResult.unacknowledged(),
+                        singletonList(
+                            new BulkWriteError(
+                                11000,
+                                sensitiveMessage,
+                                BsonDocument.parse("{\"memberCode\": \"1234567890\"}"),
+                                0)),
+                        null,
+                        new ServerAddress(),
+                        emptySet())));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter);
+
+    DataException thrown =
+        assertThrows(
+            DataException.class,
+            () -> task.put(singletonList(Records.simpleValid(TEST_TOPIC, 0))));
+
+    assertFalse(thrown.getMessage().contains("1234567890"));
+    assertFalse(thrown.getMessage().contains("memberCode"));
+    assertFalse(thrown.getMessage().contains("dup key"));
+    assertNull(
+        thrown.getCause(),
+        "cause must not chain the raw MongoBulkWriteException, whose getMessage() is not "
+            + "controlled by this connector and would still be rendered in WorkerSinkTask's "
+            + "stack trace logging even if the DataException's own message is safe");
   }
 
   @Test
