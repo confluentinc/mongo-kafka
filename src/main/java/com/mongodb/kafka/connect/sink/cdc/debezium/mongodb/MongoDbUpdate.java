@@ -66,7 +66,8 @@ public class MongoDbUpdate implements CdcOperation {
     } catch (DataException exc) {
       throw exc;
     } catch (Exception exc) {
-      throw new DataException(exc.getMessage(), exc);
+      throw new DataException(
+          "Unable to process update event. Exception type: " + exc.getClass().getName());
     }
   }
 
