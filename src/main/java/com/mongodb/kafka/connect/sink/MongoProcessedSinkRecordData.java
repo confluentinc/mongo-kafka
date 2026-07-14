@@ -105,6 +105,12 @@ final class MongoProcessedSinkRecordData {
     try {
       return supplier.get();
     } catch (Exception e) {
+      LOGGER.trace(
+          "Unable to process record in topic:{} at partition:{}, offset:{}",
+          sinkRecord.topic(),
+          sinkRecord.kafkaPartition(),
+          sinkRecord.kafkaOffset(),
+          e);
       DataException sanitized =
           new DataException(
               String.format(

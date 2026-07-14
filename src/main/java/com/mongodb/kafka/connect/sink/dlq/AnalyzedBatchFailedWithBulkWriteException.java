@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.stream.IntStream;
 
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.slf4j.LoggerFactory;
 
 import com.mongodb.MongoBulkWriteException;
 import com.mongodb.bulk.BulkWriteError;
@@ -41,6 +42,8 @@ import com.mongodb.lang.Nullable;
  * MongoBulkWriteException}.
  */
 public final class AnalyzedBatchFailedWithBulkWriteException {
+  private static final org.slf4j.Logger SLF4J_LOGGER =
+      LoggerFactory.getLogger(AnalyzedBatchFailedWithBulkWriteException.class);
   private final List<SinkRecord> batch;
   private final MongoBulkWriteException e;
   private final ErrorReporter errorReporter;
@@ -63,6 +66,14 @@ public final class AnalyzedBatchFailedWithBulkWriteException {
     this.errorReporter = errorReporter;
     this.logger = logger;
     WriteConcernError writeConcernError = e.getWriteConcernError();
+    if (writeConcernError != null) {
+      SLF4J_LOGGER.trace(
+          "Write concern error: code={}, codeName={}, message={}, details={}",
+          writeConcernError.getCode(),
+          writeConcernError.getCodeName(),
+          writeConcernError.getMessage(),
+          writeConcernError.getDetails().toJson());
+    }
     writeConcernException =
         writeConcernError == null ? null : new WriteConcernException(writeConcernError);
     analyze(ordered);
@@ -75,6 +86,12 @@ public final class AnalyzedBatchFailedWithBulkWriteException {
     writeErrors.forEach(
         writeError -> {
           int writeErrorIdx = writeError.getIndex();
+          SLF4J_LOGGER.trace(
+              "Write error for record index {}: code={}, message={}, details={}",
+              writeErrorIdx,
+              writeError.getCode(),
+              writeError.getMessage(),
+              writeError.getDetails().toJson());
           recordsFailedWithWriteError.put(
               writeErrorIdx,
               new AbstractMap.SimpleImmutableEntry<>(

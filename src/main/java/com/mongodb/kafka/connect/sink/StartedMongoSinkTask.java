@@ -167,6 +167,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
       statistics.getBatchWritesFailed().sample(writeTime.getElapsedTime().toMillis());
       statistics.getRecordsFailed().sample(batch.size());
       if (config.tolerateDataErrors() && !(e instanceof MongoBulkWriteException)) {
+        LOGGER.trace("non Data Error, failing the connector", e);
         throw new DataException(
             "non Data Error, fail the connector. Exception type: " + e.getClass().getName());
       }
@@ -216,6 +217,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
       final boolean tolerateErrors) {
     if (e instanceof MongoBulkWriteException) {
       MongoBulkWriteException bulkWriteException = (MongoBulkWriteException) e;
+      LOGGER.trace("Failed to write some records into the sink", bulkWriteException);
       AnalyzedBatchFailedWithBulkWriteException analyzedBatch =
           new AnalyzedBatchFailedWithBulkWriteException(
               batch,
@@ -255,6 +257,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
                 bulkWriteException.getWriteConcernError() != null ? 1 : 0));
       }
     } else {
+      LOGGER.trace("Failed to write records into the sink", e);
       if (logErrors) {
         log(batch, e);
       }
