@@ -20,6 +20,7 @@ package com.mongodb.kafka.connect.sink.cdc.debezium;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.apache.kafka.connect.errors.DataException;
@@ -69,8 +70,15 @@ class OperationTypeTest {
   }
 
   @Test
-  @DisplayName("when invalid op type IllegalArgumentException")
+  @DisplayName("when invalid op type then DataException that does not echo the record value")
   void testOperationTypeInvalid() {
-    assertThrows(DataException.class, () -> OperationType.fromText("x"));
+    // The op value is record-derived and reaches the framework ERROR log / task-status trace via
+    // the sink funnel, so the thrown message must not echo it.
+    String canary = "SENSITIVE_CANARY_op_9f3a1c";
+    DataException exc = assertThrows(DataException.class, () -> OperationType.fromText(canary));
+    assertFalse(
+        exc.getMessage().contains(canary),
+        () -> "record-derived op value leaked into the message: " + exc.getMessage());
+    assertEquals("Unknown operation type", exc.getMessage());
   }
 }
