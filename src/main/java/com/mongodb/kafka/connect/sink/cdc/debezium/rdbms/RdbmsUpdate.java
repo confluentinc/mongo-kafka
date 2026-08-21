@@ -54,7 +54,11 @@ public class RdbmsUpdate implements CdcOperation {
           RdbmsHandler.generateUpsertOrReplaceDoc(keyDoc, valueDoc, filterDoc);
       return new ReplaceOneModel<>(filterDoc, replaceDoc, REPLACE_OPTIONS);
     } catch (Exception exc) {
-      throw new DataException(exc);
+      // Do not chain the raw exception: its message can echo record-derived
+      // key/value content to the framework log / task-status trace via the sink
+      // funnel. Keep the exception type only, for triage.
+      throw new DataException(
+          "Unable to process update event. Exception type: " + exc.getClass().getName());
     }
   }
 }
