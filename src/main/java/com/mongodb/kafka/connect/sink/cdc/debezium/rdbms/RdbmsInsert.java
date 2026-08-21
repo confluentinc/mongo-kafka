@@ -53,7 +53,11 @@ public class RdbmsInsert implements CdcOperation {
       BsonDocument upsertDoc = RdbmsHandler.generateUpsertOrReplaceDoc(keyDoc, valueDoc, filterDoc);
       return new ReplaceOneModel<>(filterDoc, upsertDoc, REPLACE_OPTIONS);
     } catch (Exception exc) {
-      throw new DataException(exc);
+      // Do not chain the raw exception: its message can echo record-derived
+      // key/value content to the framework log / task-status trace via the sink
+      // funnel. Keep the exception type only, for triage.
+      throw new DataException(
+          "Unable to process insert event. Exception type: " + exc.getClass().getName());
     }
   }
 }
