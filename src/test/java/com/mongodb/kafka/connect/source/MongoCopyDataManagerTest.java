@@ -38,11 +38,14 @@ import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
@@ -65,12 +68,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.bson.BsonDocument;
+import org.bson.BsonInt32;
+import org.bson.BsonString;
 import org.bson.RawBsonDocument;
 import org.bson.codecs.BsonDocumentCodec;
 import org.bson.conversions.Bson;
 
 import com.mongodb.Function;
+import com.mongodb.MongoCommandException;
 import com.mongodb.MongoNamespace;
+import com.mongodb.ServerAddress;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -528,6 +535,45 @@ class MongoCopyDataManagerTest {
       sleep();
       copyExistingDataManager.poll();
     }
+  }
+
+  @Test
+  @DisplayName("copy-existing failure does not leak the raw driver error message")
+  void testCopyExistingFailureDoesNotLeakDriverErrorMessage() {
+    // The copy-existing aggregation failure is rethrown from poll() to the framework as a
+    // ConnectException, whose message and cause chain reach the shared connect log / task-status
+    // trace. The raw server error message can echo record-derived content, so it must not appear.
+    String canary = "SENSITIVE_CANARY_errmsg_9f3a1c";
+    BsonDocument response =
+        new BsonDocument("ok", new BsonInt32(0))
+            .append("code", new BsonInt32(100))
+            .append("codeName", new BsonString("CommandFailed"))
+            .append("errmsg", new BsonString(canary));
+    MongoCommandException driverException =
+        new MongoCommandException(response, new ServerAddress("localhost", 27017));
+
+    when(mongoClient.getDatabase(TEST_DATABASE)).thenReturn(mongoDatabase);
+    when(mongoDatabase.getCollection(TEST_COLLECTION, RawBsonDocument.class))
+        .thenReturn(mongoCollection);
+    when(mongoCollection.aggregate(anyList())).thenReturn(aggregateIterable);
+    when(aggregateIterable.allowDiskUse(COPY_EXISTING_ALLOW_DISK_USE_DEFAULT))
+        .thenReturn(aggregateIterable);
+    doThrow(driverException).when(aggregateIterable).forEach(any(Consumer.class));
+
+    ConnectException exc;
+    try (MongoCopyDataManager copyExistingDataManager =
+        new MongoCopyDataManager(
+            createSourceConfig(STARTUP_MODE_CONFIG, StartupMode.COPY_EXISTING.propertyValue()),
+            mongoClient)) {
+      sleep();
+      exc = assertThrows(ConnectException.class, copyExistingDataManager::poll);
+    }
+
+    assertNull(exc.getCause(), "raw driver exception must not be chained to the framework");
+    assertFalse(
+        exc.getMessage().contains(canary),
+        () -> "raw server error message leaked into the ConnectException: " + exc.getMessage());
+    assertTrue(exc.getMessage().contains("code: 100"), exc.getMessage());
   }
 
   @Test
