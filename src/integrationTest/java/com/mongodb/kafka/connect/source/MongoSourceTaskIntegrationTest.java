@@ -998,11 +998,13 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
           task.logCapture.getEvents().stream()
               .filter(e -> e.getLevel().equals(Level.WARN))
               .anyMatch(
-                  e ->
-                      e.getMessage()
-                          .toString()
-                          .startsWith(
-                              "Failed to resume change stream: Query failed with error code 10334")));
+                  e -> {
+                    // The resume-failure WARN now carries a sanitized summary (exception type +
+                    // error code + server), not the raw driver error message.
+                    String message = e.getMessage().toString();
+                    return message.startsWith("Failed to resume change stream: Exception type:")
+                        && message.contains("code: 10334");
+                  }));
 
       Map<String, Map<String, Long>> mBeansMap =
           getMBeanAttributes(

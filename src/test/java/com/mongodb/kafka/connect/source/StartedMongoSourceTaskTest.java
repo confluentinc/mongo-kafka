@@ -16,6 +16,9 @@
 package com.mongodb.kafka.connect.source;
 
 import static java.util.Collections.emptyMap;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
@@ -27,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceTaskContext;
 import org.apache.kafka.connect.storage.OffsetStorageReader;
 import org.junit.jupiter.api.AfterEach;
@@ -35,8 +39,13 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import org.bson.BsonDocument;
+import org.bson.BsonInt32;
+import org.bson.BsonString;
 import org.bson.BsonTimestamp;
 
+import com.mongodb.MongoCommandException;
+import com.mongodb.ServerAddress;
 import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.MongoChangeStreamCursor;
 import com.mongodb.client.MongoClient;
@@ -114,6 +123,48 @@ final class StartedMongoSourceTaskTest {
       verify(changeStreamIterable, atLeastOnce()).startAtOperationTime(argCaptor.capture());
       List<BsonTimestamp> capturedArgs = argCaptor.getAllValues();
       assertTrue(capturedArgs.stream().allMatch(v -> v.equals(expected)), capturedArgs::toString);
+    }
+
+    @Test
+    void changeStreamFailureDoesNotLeakDriverErrorMessage() {
+      // A change-stream cursor failure surfaces to the framework as a ConnectException; its message
+      // and cause chain are logged to the shared connect log and the task-status trace. The raw
+      // server error message can echo record-derived content, so it must not appear there.
+      String canary = "SENSITIVE_CANARY_errmsg_9f3a1c";
+      BsonDocument response =
+          new BsonDocument("ok", new BsonInt32(0))
+              .append("code", new BsonInt32(100))
+              .append("codeName", new BsonString("CommandFailed"))
+              .append("errmsg", new BsonString(canary));
+
+      MongoSourceConfig cfg = new MongoSourceConfig(properties);
+      SourceTaskContext context = mock(SourceTaskContext.class);
+      OffsetStorageReader offsetStorageReader = mock(OffsetStorageReader.class);
+      when(offsetStorageReader.offset(any())).thenReturn(emptyMap());
+      when(context.offsetStorageReader()).thenReturn(offsetStorageReader);
+      ChangeStreamIterable<?> changeStreamIterable = cast(mock(ChangeStreamIterable.class));
+      MongoClient client = mock(MongoClient.class);
+      when(changeStreamIterable.withDocumentClass(any())).thenReturn(cast(changeStreamIterable));
+      when(changeStreamIterable.cursor())
+          .thenThrow(new MongoCommandException(response, new ServerAddress("localhost", 27017)));
+      when(client.watch()).thenReturn(cast(changeStreamIterable));
+
+      ConnectException exc =
+          assertThrows(
+              ConnectException.class,
+              () ->
+                  new StartedMongoSourceTask(
+                      () -> context,
+                      cfg,
+                      client,
+                      null,
+                      new JmxStatisticsManager(false, "unknown")));
+
+      assertNull(exc.getCause(), "raw driver exception must not be chained to the framework");
+      assertFalse(
+          exc.getMessage().contains(canary),
+          () -> "raw server error message leaked into the ConnectException: " + exc.getMessage());
+      assertTrue(exc.getMessage().contains("code: 100"), exc.getMessage());
     }
   }
 

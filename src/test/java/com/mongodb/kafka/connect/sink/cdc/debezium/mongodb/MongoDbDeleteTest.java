@@ -19,6 +19,8 @@
 package com.mongodb.kafka.connect.sink.cdc.debezium.mongodb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -68,10 +70,21 @@ class MongoDbDeleteTest {
   }
 
   @Test
-  @DisplayName("when key doc 'id' field contains invalid JSON then DataException")
+  @DisplayName("when key doc 'id' field contains invalid JSON then DataException without record data")
   void testInvalidJsonIdFieldInKeyDocument() {
-    BsonDocument keyDoc = new BsonDocument("id", new BsonString("{,NOT:JSON,}"));
-    assertThrows(
-        DataException.class, () -> DELETE.perform(new SinkDocument(keyDoc, new BsonDocument())));
+    // The parser exception's message echoes the offending token from the record's _id key and,
+    // chained through the sink funnel, reaches the framework ERROR log / task-status trace.
+    String canary = "SENSITIVE_CANARY_id_9f3a1c";
+    BsonDocument keyDoc = new BsonDocument("id", new BsonString("{,NOT:" + canary + ",}"));
+    DataException exc =
+        assertThrows(
+            DataException.class, () -> DELETE.perform(new SinkDocument(keyDoc, new BsonDocument())));
+    assertNull(exc.getCause(), "raw parser exception must not be chained through the sink funnel");
+    assertFalse(
+        exc.getMessage().contains(canary),
+        () -> "record-derived content leaked into the message: " + exc.getMessage());
+    assertTrue(
+        exc.getMessage().startsWith("Unable to process delete event. Exception type:"),
+        exc.getMessage());
   }
 }

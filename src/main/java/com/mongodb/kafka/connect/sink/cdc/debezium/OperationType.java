@@ -47,7 +47,9 @@ public enum OperationType {
       case "d":
         return DELETE;
       default:
-        throw new DataException("Unknown operation type " + text);
+        // Do not echo the record-derived operation type value: it reaches the
+        // framework ERROR log and the task-status trace via the sink funnel.
+        throw new DataException("Unknown operation type");
     }
   }
 }
