@@ -18,6 +18,7 @@ package com.mongodb.kafka.connect.source;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.REGEX_TIMEOUT_MS;
+import static com.mongodb.kafka.connect.source.MongoSourceExceptions.safeErrorDetail;
 import static com.mongodb.kafka.connect.source.MongoSourceTask.TASK_ID_ZERO;
 import static java.lang.String.format;
 import static java.util.Collections.singletonList;
@@ -124,7 +125,9 @@ class MongoCopyDataManager implements AutoCloseable {
       if (!closed) {
         close();
       }
-      throw new ConnectException(errorException);
+      // Do not chain the raw driver exception: its message is the server response for the failed
+      // copy-existing aggregation and can echo record-derived content. Keep the safe summary only.
+      throw new ConnectException("Copying existing data failed. " + safeErrorDetail(errorException));
     }
 
     if (namespacesToCopy.get() == 0) {

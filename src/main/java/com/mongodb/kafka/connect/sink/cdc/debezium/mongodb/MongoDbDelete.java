@@ -50,7 +50,11 @@ public class MongoDbDelete implements CdcOperation {
           BsonDocument.parse(
               format("{%s: %s}", ID_FIELD, keyDoc.getString(JSON_ID_FIELD).getValue())));
     } catch (Exception exc) {
-      throw new DataException(exc);
+      // Do not chain the raw parser exception: its message echoes the offending
+      // token from the record's _id key to the framework log / task-status trace
+      // via the sink funnel. Keep the exception type only, for triage.
+      throw new DataException(
+          "Unable to process delete event. Exception type: " + exc.getClass().getName());
     }
   }
 }

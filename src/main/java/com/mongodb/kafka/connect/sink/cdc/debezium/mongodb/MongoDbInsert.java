@@ -55,7 +55,11 @@ public class MongoDbInsert implements CdcOperation {
       return new ReplaceOneModel<>(
           new BsonDocument(ID_FIELD, insertDoc.get(ID_FIELD)), insertDoc, REPLACE_OPTIONS);
     } catch (Exception exc) {
-      throw new DataException(exc);
+      // Do not chain the raw parser exception: its message echoes the offending
+      // token from the record's `after` field to the framework log / task-status
+      // trace via the sink funnel. Keep the exception type only, for triage.
+      throw new DataException(
+          "Unable to process insert event. Exception type: " + exc.getClass().getName());
     }
   }
 }

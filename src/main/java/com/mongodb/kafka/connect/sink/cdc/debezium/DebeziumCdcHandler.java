@@ -60,9 +60,9 @@ public abstract class DebeziumCdcHandler extends CdcHandler {
           operations.get(
               OperationType.fromText(doc.get(OPERATION_TYPE_FIELD_PATH).asString().getValue()));
       if (op == null) {
-        throw new DataException(
-            "No CDC operation found in mapping for op="
-                + doc.get(OPERATION_TYPE_FIELD_PATH).asString().getValue());
+        // Do not echo the record-derived op field value: it reaches the framework
+        // ERROR log and the task-status trace via the sink processing funnel.
+        throw new DataException("No CDC operation found in mapping for op");
       }
       return op;
     } catch (IllegalArgumentException exc) {

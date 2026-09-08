@@ -19,6 +19,8 @@
 package com.mongodb.kafka.connect.sink.cdc.debezium.mongodb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -75,14 +77,25 @@ class MongoDbInsertTest {
   }
 
   @Test
-  @DisplayName("when invalid json in value doc 'after' field then DataException")
+  @DisplayName("when invalid json in value doc 'after' field then DataException without record data")
   void testInvalidAfterField() {
-    assertThrows(
-        DataException.class,
-        () ->
-            INSERT.perform(
-                new SinkDocument(
-                    new BsonDocument(),
-                    BsonDocument.parse("{op: 'c', after: '{MAL: FORMED [JSON]}'}"))));
+    // The parser exception's message echoes the offending token from the record's `after` field
+    // and, chained through the sink funnel, reaches the framework ERROR log / task-status trace.
+    String canary = "SENSITIVE_CANARY_after_9f3a1c";
+    DataException exc =
+        assertThrows(
+            DataException.class,
+            () ->
+                INSERT.perform(
+                    new SinkDocument(
+                        new BsonDocument(),
+                        BsonDocument.parse("{op: 'c', after: '{x: " + canary + "}'}"))));
+    assertNull(exc.getCause(), "raw parser exception must not be chained through the sink funnel");
+    assertFalse(
+        exc.getMessage().contains(canary),
+        () -> "record-derived content leaked into the message: " + exc.getMessage());
+    assertTrue(
+        exc.getMessage().startsWith("Unable to process insert event. Exception type:"),
+        exc.getMessage());
   }
 }

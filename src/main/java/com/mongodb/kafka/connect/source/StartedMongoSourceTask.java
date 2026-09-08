@@ -30,6 +30,7 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.PUBLISH_FULL_DO
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.REMOVE_FIELD_ON_SCHEMA_MISMATCH_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.StartupConfig.StartupMode.COPY_EXISTING;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.StartupConfig.StartupMode.TIMESTAMP;
+import static com.mongodb.kafka.connect.source.MongoSourceExceptions.safeErrorDetail;
 import static com.mongodb.kafka.connect.source.MongoSourceTask.COPY_KEY;
 import static com.mongodb.kafka.connect.source.MongoSourceTask.DOCUMENT_KEY_FIELD;
 import static com.mongodb.kafka.connect.source.MongoSourceTask.ID_FIELD;
@@ -42,7 +43,6 @@ import static com.mongodb.kafka.connect.source.producer.SchemaAndValueProducers.
 import static com.mongodb.kafka.connect.source.producer.SchemaAndValueProducers.createValueSchemaAndValueProvider;
 import static com.mongodb.kafka.connect.util.Assertions.assertNotNull;
 import static com.mongodb.kafka.connect.util.Assertions.assertTrue;
-import static java.lang.String.format;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 
@@ -401,22 +401,15 @@ final class StartedMongoSourceTask implements AutoCloseable {
   @Nullable
   private MongoChangeStreamCursor<? extends BsonDocument> tryRecreateCursor(
       final MongoException e) {
-    int errorCode =
-        e instanceof MongoCommandException
-            ? ((MongoCommandException) e).getErrorCode()
-            : e.getCode();
-    String errorMessage =
-        e instanceof MongoCommandException
-            ? ((MongoCommandException) e).getErrorMessage()
-            : e.getMessage();
+    // Do not log the raw driver error message: it is the server's response for the failed command
+    // and can echo record-derived content. Log the safe code/codeName/server summary instead.
     LOGGER.error(
-        "Failed to resume change stream: {} {}\n"
+        "Failed to resume change stream: {}\n"
             + "===================================================================================\n"
             + "When the resume token is no longer available there is the potential for data loss.\n\n"
             + "Restarting the change stream with no resume token because `errors.tolerance=all`.\n"
             + "===================================================================================\n",
-        errorMessage,
-        errorCode);
+        safeErrorDetail(e));
     invalidatedCursor = true;
     return tryCreateCursor(sourceConfig, mongoClient, null);
   }
@@ -467,32 +460,33 @@ final class StartedMongoSourceTask implements AutoCloseable {
           return tryRecreateCursor(e);
         }
       }
+      // Do not log the raw driver error message or chain the raw driver exception: the server
+      // response can echo record-derived content, which the framework then writes to the shared
+      // connect log and the task-status trace. Keep the safe code/codeName/server summary only.
+      String errorDetail = safeErrorDetail(e);
       if (e.getErrorCode() == NAMESPACE_NOT_FOUND_ERROR) {
         LOGGER.info("Namespace not found cursor closed.");
       } else if (e.getErrorCode() == ILLEGAL_OPERATION_ERROR) {
         LOGGER.error(
-            "Illegal $changeStream operation: {} {}\n\n"
+            "Illegal $changeStream operation: {}\n\n"
                 + "=====================================================================================\n"
-                + "{}\n\n"
                 + "Please Note: Not all aggregation pipeline operations are suitable for modifying the\n"
                 + "change stream output. For more information, please see the official documentation:\n"
                 + "   https://docs.mongodb.com/manual/changeStreams/\n"
                 + "=====================================================================================\n",
-            e.getErrorMessage(),
-            e.getErrorCode(),
-            e.getErrorMessage());
-        throw new ConnectException("Illegal $changeStream operation", e);
+            errorDetail);
+        throw new ConnectException("Illegal $changeStream operation. " + errorDetail);
       } else if (e.getErrorCode() == UNKNOWN_FIELD_ERROR) {
         String msg =
-            format(
-                "Invalid operation: %s %s."
-                    + " It is likely that you are trying to use functionality unsupported by your version of MongoDB.",
-                e.getErrorMessage(), e.getErrorCode());
+            "Invalid operation: "
+                + errorDetail
+                + ". It is likely that you are trying to use functionality unsupported by your"
+                + " version of MongoDB.";
         LOGGER.error(msg);
-        throw new ConnectException(msg, e);
+        throw new ConnectException(msg);
       } else {
         LOGGER.warn(
-            "Failed to resume change stream: {} {}\n\n"
+            "Failed to resume change stream: {}\n\n"
                 + "=====================================================================================\n"
                 + "If the resume token is no longer available then there is the potential for data loss.\n"
                 + "Saved resume tokens are managed by Kafka and stored with the offset data.\n\n"
@@ -504,13 +498,12 @@ final class StartedMongoSourceTask implements AutoCloseable {
                 + "token. Using `startup.mode = copy_existing` ensures that all data will be outputted by the\n"
                 + "connector but it will duplicate existing data.\n"
                 + "=====================================================================================\n",
-            e.getErrorMessage(),
-            e.getErrorCode());
+            errorDetail);
         if (changeStreamNotValid(e)) {
           throw new ConnectException(
-              "ResumeToken not found. Cannot create a change stream cursor", e);
+              "ResumeToken not found. Cannot create a change stream cursor. " + errorDetail);
         } else {
-          throw new ConnectException("Failed to resume change stream", e);
+          throw new ConnectException("Failed to resume change stream. " + errorDetail);
         }
       }
       return null;
@@ -549,7 +542,9 @@ final class StartedMongoSourceTask implements AutoCloseable {
       if (e.getErrorCode() == NAMESPACE_NOT_FOUND_ERROR) {
         return;
       }
-      throw new ConnectException(e);
+      // Do not chain the raw driver exception; its message is the server response.
+      throw new ConnectException(
+          "Failed to establish the change stream cursor. " + safeErrorDetail(e));
     }
     ChangeStreamDocument<Document> firstResult = changeStreamCursor.tryNext();
     if (firstResult != null) {
@@ -632,21 +627,26 @@ final class StartedMongoSourceTask implements AutoCloseable {
           if (changeStreamNotValid(e)) {
             cursor = tryRecreateCursor(e);
           } else {
+            // Do not log the raw driver exception: its message is the server response and can
+            // echo record-derived content. Log the safe code/codeName/server summary only.
             LOGGER.error(
-                "An exception occurred when trying to get the next item from the Change Stream", e);
+                "An exception occurred when trying to get the next item from the Change Stream {}",
+                safeErrorDetail(e));
           }
         } else {
           LOGGER.error(
-              "An exception occurred when trying to get the next item from the Change Stream", e);
+              "An exception occurred when trying to get the next item from the Change Stream {}",
+              safeErrorDetail(e));
           if (e instanceof MongoQueryException && ((MongoQueryException) e).getErrorCode() == 286) {
-            throw new ConnectException("Failed to resume change stream", e);
+            throw new ConnectException("Failed to resume change stream. " + safeErrorDetail(e));
           }
         }
       }
     } catch (Exception e) {
       closeCursor();
       if (isRunning) {
-        throw new ConnectException("Unexpected error: " + e.getMessage(), e);
+        // Do not chain the raw exception or echo its message: it can carry record-derived content.
+        throw new ConnectException("Unexpected error. " + safeErrorDetail(e));
       }
     }
 
