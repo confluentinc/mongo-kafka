@@ -33,12 +33,13 @@ import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
-import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -116,8 +117,17 @@ class MongoCopyDataManager implements AutoCloseable {
     executor =
         Executors.newFixedThreadPool(
             Math.max(1, Math.min(namespaces.size(), copyConfig.maxThreads())),
-            ThreadUtils.createThreadFactory(threadNamePattern, false));
+            createThreadFactory(threadNamePattern));
     namespaces.forEach(n -> executor.submit(() -> copyDataFrom(n)));
+  }
+
+  private static ThreadFactory createThreadFactory(final String threadNamePattern) {
+    AtomicLong threadNumber = new AtomicLong(1);
+    return r -> {
+      Thread thread = new Thread(r, format(threadNamePattern, threadNumber.getAndIncrement()));
+      thread.setDaemon(false);
+      return thread;
+    };
   }
 
   Optional<BsonDocument> poll() {

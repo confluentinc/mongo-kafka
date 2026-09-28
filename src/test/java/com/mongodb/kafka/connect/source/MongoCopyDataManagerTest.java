@@ -155,10 +155,12 @@ class MongoCopyDataManagerTest {
     when(cursor.hasNext()).thenReturn(true, false);
 
     AtomicReference<String> threadNameRef = new AtomicReference<>();
+    AtomicReference<Boolean> threadDaemonRef = new AtomicReference<>();
     when(cursor.next())
         .thenAnswer(
             invocation -> {
               threadNameRef.set(Thread.currentThread().getName());
+              threadDaemonRef.set(Thread.currentThread().isDaemon());
               return createInput(jsonTemplate);
             });
 
@@ -179,6 +181,7 @@ class MongoCopyDataManagerTest {
         threadNameRef.get() != null && threadNameRef.get().startsWith(expectedPrefix),
         () -> "Expected thread name to start with '"
             + expectedPrefix + "' but was '" + threadNameRef.get() + "'");
+    assertEquals(false, threadDaemonRef.get());
   }
 
   @Test
