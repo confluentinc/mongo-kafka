@@ -17,6 +17,7 @@ package com.mongodb.kafka.connect.source;
 
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME_MS_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PROVIDER_CONFIG;
 import static com.mongodb.kafka.connect.util.Assertions.assertNotNull;
 import static com.mongodb.kafka.connect.util.ConfigHelper.getMongoDriverInformation;
@@ -41,6 +42,7 @@ import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.connection.SocketSettings;
 import com.mongodb.event.CommandFailedEvent;
 import com.mongodb.event.CommandListener;
 import com.mongodb.event.CommandSucceededEvent;
@@ -100,6 +102,9 @@ public final class MongoSourceTask extends SourceTask {
    */
   public static final String TASK_ID_ZERO = "0";
 
+  static final long READ_TIMEOUT_MARGIN_MS = 30_000;
+  static final long MIN_READ_TIMEOUT_MS = 60_000;
+
   private StartedMongoSourceTask startedTask;
 
   @Override
@@ -139,6 +144,7 @@ public final class MongoSourceTask extends SourceTask {
       MongoClientSettings.Builder builder =
           MongoClientSettings.builder()
               .applyConnectionString(sourceConfig.getConnectionString())
+              .applyToSocketSettings(socket -> setReadTimeout(socket, sourceConfig))
               .addCommandListener(statisticsCommandListener)
               .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sourceConfig));
 
@@ -176,6 +182,24 @@ public final class MongoSourceTask extends SourceTask {
       throw new ConnectException("Failed to start MongoDB source task", taskStartingException);
     }
     LOGGER.info("Started MongoDB source task");
+  }
+
+  /**
+   * The driver's default read timeout is infinite, so a hung change stream connection blocks
+   * {@code tryNext()} forever. Sets a timeout above {@code poll.await.time.ms}, so an idle getMore
+   * never trips it, with a floor that leaves room for the startup and copy-existing aggregations.
+   * A {@code socketTimeoutMS} set in the connection string is left as is.
+   */
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  static void setReadTimeout(
+      final SocketSettings.Builder socket, final MongoSourceConfig sourceConfig) {
+    if (sourceConfig.getConnectionString().getSocketTimeout() == null) {
+      long readTimeoutMs =
+          Math.max(
+              sourceConfig.getLong(POLL_AWAIT_TIME_MS_CONFIG) + READ_TIMEOUT_MARGIN_MS,
+              MIN_READ_TIMEOUT_MS);
+      socket.readTimeout((int) readTimeoutMs, TimeUnit.MILLISECONDS);
+    }
   }
 
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
