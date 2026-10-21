@@ -23,7 +23,6 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DOCUMENT_KEY_AS_KEY_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.HEARTBEAT_INTERVAL_MS_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.HEARTBEAT_TOPIC_NAME_CONFIG;
-import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME_MS_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_MAX_BATCH_SIZE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PUBLISH_FULL_DOCUMENT_ONLY_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PUBLISH_FULL_DOCUMENT_ONLY_TOMBSTONE_ON_DELETE_CONFIG;
@@ -43,6 +42,7 @@ import static com.mongodb.kafka.connect.source.producer.SchemaAndValueProducers.
 import static com.mongodb.kafka.connect.source.producer.SchemaAndValueProducers.createValueSchemaAndValueProvider;
 import static com.mongodb.kafka.connect.util.Assertions.assertNotNull;
 import static com.mongodb.kafka.connect.util.Assertions.assertTrue;
+import static java.lang.String.format;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 
@@ -55,6 +55,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -120,6 +121,10 @@ final class StartedMongoSourceTask implements AutoCloseable {
   private static final String DOES_NOT_EXIST = "does not exist";
   private static final String INVALID_RESUME_TOKEN = "invalid resume token";
   private static final String NO_LONGER_IN_THE_OPLOG = "no longer be in the oplog";
+  static final int MAX_CONSECUTIVE_READ_FAILURES = 10;
+  static final long READ_FAILURE_BACKOFF_BASE_MS = 500;
+  static final long READ_FAILURE_BACKOFF_CAP_MS = 30_000;
+  private static final long PAUSE_SLICE_MS = 100;
 
   private static final SchemaAndValueProducer TOMBSTONE_SCHEMA_AND_VALUE_PRODUCER =
       i -> SchemaAndValue.NULL;
@@ -136,6 +141,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
 
   private boolean supportsStartAfter = true;
   private boolean invalidatedCursor = false;
+  private int consecutiveReadFailures;
   @Nullable private final MongoCopyDataManager copyDataManager;
   private BsonDocument cachedResult;
   private BsonDocument cachedResumeToken;
@@ -150,6 +156,23 @@ final class StartedMongoSourceTask implements AutoCloseable {
       final MongoClient mongoClient,
       @Nullable final MongoCopyDataManager copyDataManager,
       final StatisticsManager statisticsManager) {
+    this(
+        sourceTaskContextAccessor,
+        sourceConfig,
+        mongoClient,
+        copyDataManager,
+        statisticsManager,
+        Time.SYSTEM);
+  }
+
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  StartedMongoSourceTask(
+      final Supplier<SourceTaskContext> sourceTaskContextAccessor,
+      final MongoSourceConfig sourceConfig,
+      final MongoClient mongoClient,
+      @Nullable final MongoCopyDataManager copyDataManager,
+      final StatisticsManager statisticsManager,
+      final Time time) {
     this.sourceTaskContextAccessor = sourceTaskContextAccessor;
     this.sourceConfig = sourceConfig;
     this.mongoClient = mongoClient;
@@ -159,7 +182,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
       assertTrue(sourceConfig.getStartupConfig().startupMode() == COPY_EXISTING);
     }
     isCopying = shouldCopyData;
-    time = Time.SYSTEM;
+    this.time = time;
     partitionMap = createPartitionMap(sourceConfig);
     this.copyDataManager = copyDataManager;
     if (shouldCopyData) {
@@ -600,15 +623,26 @@ final class StartedMongoSourceTask implements AutoCloseable {
       }
     }
 
-    if (cursor == null) {
-      initializeCursorAndHeartbeatManager();
-    } else if (cursor.getServerCursor() == null) {
-      LOGGER.info("Cursor has been closed by the server - reinitializing");
-      invalidateCursorAndReinitialize();
+    try {
+      if (cursor == null) {
+        initializeCursorAndHeartbeatManager();
+      } else if (cursor.getServerCursor() == null) {
+        LOGGER.info("Cursor has been closed by the server - reinitializing");
+        invalidateCursorAndReinitialize();
+      }
+    } catch (MongoException e) {
+      // e.g. the read timeout or server selection timing out while reopening the cursor.
+      closeCursor();
+      LOGGER.error("Failed to reopen the change stream cursor {}", safeErrorDetail(e));
+      backOffAfterReadFailure(safeErrorDetail(e));
+      return batch;
     }
 
     if (cursor == null) {
+      // The watched namespace doesn't exist (yet): an expected state, not a failure. Wait one
+      // poll interval so this doesn't become a tight loop of aggregate commands.
       LOGGER.info("Unable to recreate the cursor");
+      pause(sourceConfig.getPollAwaitTimeMs());
       return batch;
     }
 
@@ -620,6 +654,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
           batch.add(next);
         }
       } while (next != null && batch.size() < maxBatchSize && cursor.available() > 0);
+      consecutiveReadFailures = 0;
     } catch (MongoException e) {
       closeCursor();
       if (isRunning) {
@@ -641,6 +676,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
             throw new ConnectException("Failed to resume change stream. " + safeErrorDetail(e));
           }
         }
+        backOffAfterReadFailure(safeErrorDetail(e));
       }
     } catch (Exception e) {
       closeCursor();
@@ -651,6 +687,39 @@ final class StartedMongoSourceTask implements AutoCloseable {
     }
 
     return batch;
+  }
+
+  /**
+   * Pauses before the next poll reopens the cursor, so a persistent error doesn't become a tight
+   * loop against the cluster. Uses capped exponential backoff with full jitter, and fails the task
+   * once the failures reach {@link #MAX_CONSECUTIVE_READ_FAILURES} in a row.
+   */
+  private void backOffAfterReadFailure(final String detail) {
+    consecutiveReadFailures++;
+    if (consecutiveReadFailures >= MAX_CONSECUTIVE_READ_FAILURES) {
+      throw new ConnectException(
+          format(
+              "Failed to read from the change stream %d consecutive times. Last error: %s",
+              consecutiveReadFailures, detail));
+    }
+    long capMs =
+        Math.min(
+            READ_FAILURE_BACKOFF_CAP_MS,
+            READ_FAILURE_BACKOFF_BASE_MS << Math.min(consecutiveReadFailures - 1, 16));
+    // Equal jitter: at least half the cap, so the failure limit can't be reached in a burst.
+    long pauseMs = capMs / 2 + ThreadLocalRandom.current().nextLong(capMs / 2 + 1);
+    LOGGER.info(
+        "Change stream read failed {} consecutive time(s); pausing {} ms before reopening the cursor",
+        consecutiveReadFailures,
+        pauseMs);
+    pause(pauseMs);
+  }
+
+  /** Sleeps in short slices, so {@link #close()} doesn't have to wait out the whole pause. */
+  private void pause(final long pauseMs) {
+    for (long slept = 0; slept < pauseMs && isRunning; slept += PAUSE_SLICE_MS) {
+      time.sleep(Math.min(PAUSE_SLICE_MS, pauseMs - slept));
+    }
   }
 
   private void closeCursor() {
@@ -692,8 +761,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
       MongoCollection<Document> coll = mongoClient.getDatabase(database).getCollection(collection);
       changeStream = pipeline.map(coll::watch).orElse(coll.watch());
     }
-    changeStream.maxAwaitTime(
-        sourceConfig.getLong(POLL_AWAIT_TIME_MS_CONFIG), TimeUnit.MILLISECONDS);
+    changeStream.maxAwaitTime(sourceConfig.getPollAwaitTimeMs(), TimeUnit.MILLISECONDS);
     int batchSize = sourceConfig.getInt(BATCH_SIZE_CONFIG);
     if (batchSize > 0) {
       changeStream.batchSize(batchSize);
