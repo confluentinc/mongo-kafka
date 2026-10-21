@@ -21,21 +21,30 @@ import static com.mongodb.kafka.connect.sink.MongoSinkTask.LOGGER;
 import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.BULK_WRITE_ORDERED_CONFIG;
 import static com.mongodb.kafka.connect.util.TimeseriesValidation.validateCollection;
 
+import static java.util.Arrays.asList;
+
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.LongConsumer;
 import java.util.stream.Collectors;
 
 import org.apache.kafka.connect.connector.ConnectRecord;
 import org.apache.kafka.connect.errors.DataException;
+import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
 
 import org.bson.BsonDocument;
 
 import com.mongodb.MongoBulkWriteException;
+import com.mongodb.MongoException;
 import com.mongodb.MongoNamespace;
+import com.mongodb.MongoSocketException;
+import com.mongodb.MongoTimeoutException;
+import com.mongodb.bulk.BulkWriteError;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.model.BulkWriteOptions;
@@ -44,6 +53,7 @@ import com.mongodb.client.model.WriteModel;
 import com.mongodb.kafka.connect.sink.dlq.AnalyzedBatchFailedWithBulkWriteException;
 import com.mongodb.kafka.connect.sink.dlq.ErrorReporter;
 import com.mongodb.kafka.connect.source.statistics.JmxStatisticsManager;
+import com.mongodb.kafka.connect.util.VisibleForTesting;
 import com.mongodb.kafka.connect.util.jmx.SinkTaskStatistics;
 import com.mongodb.kafka.connect.util.jmx.internal.MBeanServerUtils;
 import com.mongodb.kafka.connect.util.time.InnerOuterTimer;
@@ -51,10 +61,42 @@ import com.mongodb.kafka.connect.util.time.InnerOuterTimer.InnerTimer;
 import com.mongodb.kafka.connect.util.time.Timer;
 
 final class StartedMongoSinkTask implements AutoCloseable {
+  /**
+   * Server error codes for transient conditions (overload, failover, network, timeouts). A write
+   * that fails only with these is retried; every other code is a terminal per-record error.
+   */
+  static final Set<Integer> TRANSIENT_ERROR_CODES =
+      new HashSet<>(
+          asList(
+              6, // HostUnreachable
+              7, // HostNotFound
+              50, // MaxTimeMSExpired
+              64, // WriteConcernFailed (wtimeout)
+              89, // NetworkTimeout
+              91, // ShutdownInProgress
+              189, // PrimarySteppedDown
+              262, // ExceededTimeLimit
+              462, // IngressRequestRateLimitExceeded
+              9001, // SocketException
+              10107, // NotWritablePrimary
+              11600, // InterruptedAtShutdown
+              11602, // InterruptedDueToReplStateChange
+              13435, // NotPrimaryNoSecondaryOk
+              13436, // NotPrimaryOrSecondary
+              16500 // Request rate too large
+              ));
+
+  private static final String RETRYABLE_WRITE_ERROR_LABEL = "RetryableWriteError";
+  static final int MAX_CONSECUTIVE_RETRIES = 10;
+  static final long RETRY_BACKOFF_BASE_MS = 1_000;
+  static final long RETRY_BACKOFF_CAP_MS = 60_000;
+
   private final MongoSinkConfig sinkConfig;
   private final MongoClient mongoClient;
   private final ErrorReporter errorReporter;
+  private final LongConsumer retryTimeout;
   private final Set<MongoNamespace> checkedTimeseriesNamespaces;
+  private int consecutiveRetries;
 
   private final SinkTaskStatistics statistics;
   private final InnerOuterTimer inTaskPutInConnectFrameworkTimer;
@@ -63,9 +105,23 @@ final class StartedMongoSinkTask implements AutoCloseable {
       final MongoSinkConfig sinkConfig,
       final MongoClient mongoClient,
       final ErrorReporter errorReporter) {
+    this(sinkConfig, mongoClient, errorReporter, timeoutMs -> {});
+  }
+
+  /**
+   * @param retryTimeout sets how long the framework waits before redelivering a batch after a
+   *     {@link RetriableException}, see {@link
+   *     org.apache.kafka.connect.sink.SinkTaskContext#timeout(long)}
+   */
+  StartedMongoSinkTask(
+      final MongoSinkConfig sinkConfig,
+      final MongoClient mongoClient,
+      final ErrorReporter errorReporter,
+      final LongConsumer retryTimeout) {
     this.sinkConfig = sinkConfig;
     this.mongoClient = mongoClient;
     this.errorReporter = errorReporter;
+    this.retryTimeout = retryTimeout;
     checkedTimeseriesNamespaces = new HashSet<>();
     statistics = new SinkTaskStatistics(getMBeanName());
     statistics.register();
@@ -117,6 +173,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
         for (List<MongoProcessedSinkRecordData> batch : batches) {
           bulkWriteBatch(batch);
         }
+        consecutiveRetries = 0;
       }
     }
   }
@@ -166,6 +223,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
     } catch (RuntimeException e) {
       statistics.getBatchWritesFailed().sample(writeTime.getElapsedTime().toMillis());
       statistics.getRecordsFailed().sample(batch.size());
+      retryIfTransient(e);
       if (config.tolerateDataErrors() && !(e instanceof MongoBulkWriteException)) {
         LOGGER.trace("non Data Error, failing the connector", e);
         throw new DataException(
@@ -181,6 +239,76 @@ final class StartedMongoSinkTask implements AutoCloseable {
           config.tolerateErrors() || config.tolerateDataErrors());
     }
     checkRateLimit(config);
+  }
+
+  /**
+   * Throws a {@link RetriableException} for a transient error, so the framework redelivers the
+   * same records after a capped exponential backoff with full jitter instead of failing the task
+   * or dead-lettering them. Once {@link #MAX_CONSECUTIVE_RETRIES} retries in a row have failed,
+   * returns, and the error is handled as before.
+   *
+   * <p>Retrying redelivers the whole {@code put()}, so batches that were already written are
+   * written again: safe for the default replace-with-upsert write model strategy.
+   */
+  private void retryIfTransient(final RuntimeException e) {
+    if (!isTransient(e) || consecutiveRetries >= MAX_CONSECUTIVE_RETRIES) {
+      return;
+    }
+    consecutiveRetries++;
+    long capMs =
+        Math.min(RETRY_BACKOFF_CAP_MS, RETRY_BACKOFF_BASE_MS << Math.min(consecutiveRetries - 1, 16));
+    long backoffMs = ThreadLocalRandom.current().nextLong(capMs + 1);
+    LOGGER.warn(
+        "Transient error writing to MongoDB ({}), retry {} of {} in {} ms",
+        errorSummary(e),
+        consecutiveRetries,
+        MAX_CONSECUTIVE_RETRIES,
+        backoffMs);
+    retryTimeout.accept(backoffMs);
+    // Do not chain the driver exception: its message can carry record-derived content.
+    throw new RetriableException("Transient error writing to MongoDB: " + errorSummary(e));
+  }
+
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  static boolean isTransient(final RuntimeException e) {
+    if (e instanceof MongoBulkWriteException) {
+      MongoBulkWriteException bulkWriteException = (MongoBulkWriteException) e;
+      List<BulkWriteError> writeErrors = bulkWriteException.getWriteErrors();
+      boolean writeErrorsTransient =
+          writeErrors.stream().allMatch(error -> TRANSIENT_ERROR_CODES.contains(error.getCode()));
+      boolean writeConcernErrorTransient =
+          bulkWriteException.getWriteConcernError() == null
+              || TRANSIENT_ERROR_CODES.contains(bulkWriteException.getWriteConcernError().getCode());
+      boolean anyError = !writeErrors.isEmpty() || bulkWriteException.getWriteConcernError() != null;
+      return anyError && writeErrorsTransient && writeConcernErrorTransient;
+    }
+    if (e instanceof MongoSocketException || e instanceof MongoTimeoutException) {
+      return true;
+    }
+    if (e instanceof MongoException) {
+      MongoException mongoException = (MongoException) e;
+      return mongoException.hasErrorLabel(RETRYABLE_WRITE_ERROR_LABEL)
+          || TRANSIENT_ERROR_CODES.contains(mongoException.getCode());
+    }
+    return false;
+  }
+
+  private static String errorSummary(final RuntimeException e) {
+    if (e instanceof MongoBulkWriteException) {
+      MongoBulkWriteException bulkWriteException = (MongoBulkWriteException) e;
+      return "write error code(s) "
+          + bulkWriteException.getWriteErrors().stream()
+              .map(BulkWriteError::getCode)
+              .distinct()
+              .collect(Collectors.toList())
+          + (bulkWriteException.getWriteConcernError() != null
+              ? ", write concern error code " + bulkWriteException.getWriteConcernError().getCode()
+              : "");
+    }
+    if (e instanceof MongoException) {
+      return e.getClass().getSimpleName() + " code " + ((MongoException) e).getCode();
+    }
+    return e.getClass().getSimpleName();
   }
 
   private void checkTimeseries(final MongoNamespace namespace, final MongoSinkTopicConfig config) {
