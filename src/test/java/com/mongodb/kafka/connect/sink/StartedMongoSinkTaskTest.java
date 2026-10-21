@@ -57,6 +57,7 @@ import java.util.stream.IntStream;
 
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.DataException;
+import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -70,6 +71,7 @@ import org.bson.BsonDocument;
 import com.mongodb.MongoBulkWriteException;
 import com.mongodb.MongoCommandException;
 import com.mongodb.MongoNamespace;
+import com.mongodb.MongoSocketReadTimeoutException;
 import com.mongodb.ServerAddress;
 import com.mongodb.bulk.BulkWriteError;
 import com.mongodb.bulk.BulkWriteResult;
@@ -456,6 +458,76 @@ final class StartedMongoSinkTaskTest {
   @SuppressWarnings("unchecked")
   private static <T> T cast(final Object o) {
     return (T) o;
+  }
+
+  @Test
+  void transientErrorsAreClassifiedAsTransient() {
+    assertAll(
+        () -> assertTrue(StartedMongoSinkTask.isTransient(commandException(16500))),
+        () -> assertTrue(StartedMongoSinkTask.isTransient(commandException(91))),
+        () -> assertFalse(StartedMongoSinkTask.isTransient(commandException(0))),
+        () ->
+            assertTrue(
+                StartedMongoSinkTask.isTransient(
+                    new MongoSocketReadTimeoutException(
+                        "read timed out", new ServerAddress(), new RuntimeException()))),
+        () -> assertTrue(StartedMongoSinkTask.isTransient(bulkWriteException(16500))),
+        () -> assertFalse(StartedMongoSinkTask.isTransient(bulkWriteException(11000))),
+        () -> assertFalse(StartedMongoSinkTask.isTransient(bulkWriteException(16500, 11000))),
+        () -> assertFalse(StartedMongoSinkTask.isTransient(new RuntimeException())));
+  }
+
+  @Test
+  void putRetriesTransientErrorsThenFallsBackToTheConfiguredTolerance() {
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(commandException(16500)));
+    List<Long> timeouts = new ArrayList<>();
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeouts::add);
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    for (int i = 0; i < StartedMongoSinkTask.MAX_CONSECUTIVE_RETRIES; i++) {
+      assertThrows(RetriableException.class, () -> task.put(records));
+    }
+    assertEquals(StartedMongoSinkTask.MAX_CONSECUTIVE_RETRIES, timeouts.size());
+    assertTrue(
+        timeouts.stream()
+            .allMatch(t -> t >= 0 && t <= StartedMongoSinkTask.RETRY_BACKOFF_CAP_MS),
+        timeouts::toString);
+    assertThrows(DataException.class, () -> task.put(records));
+  }
+
+  @Test
+  void putTolerateAllRetriesTransientErrorsInsteadOfReporting() {
+    properties.put(MongoSinkTopicConfig.ERRORS_TOLERANCE_CONFIG, ErrorTolerance.ALL.value());
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(bulkWriteException(16500))
+                .thenReturn(BulkWriteResult.unacknowledged()));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    task.put(records);
+    assertTrue(errorReporter.reported().isEmpty());
+  }
+
+  private static MongoCommandException commandException(final int code) {
+    return new MongoCommandException(
+        BsonDocument.parse("{ok: 0, code: " + code + ", errmsg: 'x'}"), new ServerAddress());
+  }
+
+  private static MongoBulkWriteException bulkWriteException(final int... codes) {
+    List<BulkWriteError> writeErrors = new ArrayList<>();
+    for (int i = 0; i < codes.length; i++) {
+      writeErrors.add(new BulkWriteError(codes[i], "", BsonDocument.parse("{}"), i));
+    }
+    return new MongoBulkWriteException(
+        BulkWriteResult.unacknowledged(), writeErrors, null, new ServerAddress(), emptySet());
   }
 
   private static MongoBulkWriteException bulkWriteException(
