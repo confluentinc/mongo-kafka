@@ -357,7 +357,8 @@ public class MongoSourceConfig extends AbstractConfig {
       "The maximum amount of time in milliseconds the server waits for new data changes to report to the change stream cursor "
           + "before returning an empty batch.";
   private static final long POLL_AWAIT_TIME_MS_DEFAULT = 5000;
-  // Below 100ms an idle task hot-polls the server with getMore commands.
+  // Below 100ms an idle task hot-polls the server with getMore commands. Out-of-range values are
+  // clamped rather than rejected, so existing connectors keep starting.
   static final long POLL_AWAIT_TIME_MS_MIN = 100;
   static final long POLL_AWAIT_TIME_MS_MAX = 60_000;
   private static final String POLL_AWAIT_TIME_MS_DISPLAY = "Poll await time (ms)";
@@ -843,6 +844,12 @@ public class MongoSourceConfig extends AbstractConfig {
     return getBoolean(SHOW_EXPANDED_EVENTS_CONFIG);
   }
 
+  /** {@code poll.await.time.ms}, clamped to {@code [100, 60000]}. */
+  long getPollAwaitTimeMs() {
+    return Math.max(
+        POLL_AWAIT_TIME_MS_MIN, Math.min(getLong(POLL_AWAIT_TIME_MS_CONFIG), POLL_AWAIT_TIME_MS_MAX));
+  }
+
   StartupConfig getStartupConfig() {
     StartupConfig result = startupConfig;
     if (result != null) {
@@ -1172,7 +1179,7 @@ public class MongoSourceConfig extends AbstractConfig {
         POLL_AWAIT_TIME_MS_CONFIG,
         Type.LONG,
         POLL_AWAIT_TIME_MS_DEFAULT,
-        ConfigDef.Range.between(POLL_AWAIT_TIME_MS_MIN, POLL_AWAIT_TIME_MS_MAX),
+        ConfigDef.Range.atLeast(1),
         Importance.LOW,
         POLL_AWAIT_TIME_MS_DOC,
         group,

@@ -98,10 +98,18 @@ class MongoCopyDataManager implements AutoCloseable {
   private final AtomicInteger namespacesToCopy;
   private final MongoSourceConfig sourceConfig;
   private final MongoClient mongoClient;
+  private final boolean ownsClient;
   private final ExecutorService executor;
   private final ArrayBlockingQueue<BsonDocument> queue;
 
   MongoCopyDataManager(final MongoSourceConfig sourceConfig, final MongoClient mongoClient) {
+    this(sourceConfig, mongoClient, false);
+  }
+
+  /** @param ownsClient whether {@link #close()} also closes {@code mongoClient} */
+  MongoCopyDataManager(
+      final MongoSourceConfig sourceConfig, final MongoClient mongoClient, final boolean ownsClient) {
+    this.ownsClient = ownsClient;
     this.sourceConfig = sourceConfig;
     this.mongoClient = mongoClient;
 
@@ -156,6 +164,9 @@ class MongoCopyDataManager implements AutoCloseable {
       closed = true;
       LOGGER.debug("Shutting down copy data manager executors");
       executor.shutdownNow();
+      if (ownsClient) {
+        mongoClient.close();
+      }
     }
   }
 

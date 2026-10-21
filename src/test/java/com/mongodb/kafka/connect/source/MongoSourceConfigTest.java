@@ -426,13 +426,12 @@ class MongoSourceConfigTest {
                 createSourceConfig(POLL_AWAIT_TIME_MS_CONFIG, "100")
                     .getLong(POLL_AWAIT_TIME_MS_CONFIG)),
         () -> assertInvalid(POLL_AWAIT_TIME_MS_CONFIG, "0"),
-        () -> assertInvalid(POLL_AWAIT_TIME_MS_CONFIG, "99"),
+        () -> assertEquals(5000, createSourceConfig().getPollAwaitTimeMs()),
+        () -> assertEquals(100, createSourceConfig(POLL_AWAIT_TIME_MS_CONFIG, "1").getPollAwaitTimeMs()),
         () ->
             assertEquals(
                 60000,
-                createSourceConfig(POLL_AWAIT_TIME_MS_CONFIG, "60000")
-                    .getLong(POLL_AWAIT_TIME_MS_CONFIG)),
-        () -> assertInvalid(POLL_AWAIT_TIME_MS_CONFIG, "60001"));
+                createSourceConfig(POLL_AWAIT_TIME_MS_CONFIG, "90000").getPollAwaitTimeMs()));
   }
 
   @Test

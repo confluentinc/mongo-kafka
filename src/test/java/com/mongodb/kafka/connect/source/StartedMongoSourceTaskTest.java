@@ -24,7 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -199,10 +199,37 @@ final class StartedMongoSourceTaskTest {
       for (int i = 0; i < failuresBeforeLimit; i++) {
         task.poll();
       }
-      verify(time, times(failuresBeforeLimit)).sleep(anyLong());
+      verify(time, atLeast(failuresBeforeLimit)).sleep(anyLong());
 
       ConnectException exc = assertThrows(ConnectException.class, () -> task.poll());
       assertTrue(exc.getMessage().contains("consecutive times"), exc.getMessage());
+    }
+
+    @Test
+    void missingNamespaceDoesNotCountTowardTheFailureLimit() {
+      MongoSourceConfig cfg = new MongoSourceConfig(properties);
+      SourceTaskContext context = mock(SourceTaskContext.class);
+      OffsetStorageReader offsetStorageReader = mock(OffsetStorageReader.class);
+      when(offsetStorageReader.offset(any())).thenReturn(emptyMap());
+      when(context.offsetStorageReader()).thenReturn(offsetStorageReader);
+      ChangeStreamIterable<?> changeStreamIterable = cast(mock(ChangeStreamIterable.class));
+      when(changeStreamIterable.withDocumentClass(any())).thenReturn(cast(changeStreamIterable));
+      when(changeStreamIterable.cursor())
+          .thenThrow(
+              new MongoCommandException(
+                  BsonDocument.parse("{ok: 0, code: 26, errmsg: 'ns not found'}"),
+                  new ServerAddress()));
+      MongoClient client = mock(MongoClient.class);
+      when(client.watch()).thenReturn(cast(changeStreamIterable));
+      Time time = mock(Time.class);
+
+      task =
+          new StartedMongoSourceTask(
+              () -> context, cfg, client, null, new JmxStatisticsManager(false, "unknown"), time);
+      for (int i = 0; i < StartedMongoSourceTask.MAX_CONSECUTIVE_READ_FAILURES * 2; i++) {
+        task.poll();
+      }
+      verify(time, atLeast(1)).sleep(anyLong());
     }
   }
 

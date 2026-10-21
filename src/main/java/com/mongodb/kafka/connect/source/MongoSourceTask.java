@@ -121,6 +121,13 @@ public final class MongoSourceTask extends SourceTask {
     MongoCopyDataManager copyDataManager = null;
     try {
       MongoSourceConfig sourceConfig = new MongoSourceConfig(props);
+      if (sourceConfig.getPollAwaitTimeMs() != sourceConfig.getLong(POLL_AWAIT_TIME_MS_CONFIG)) {
+        LOGGER.warn(
+            "{}={} is outside 100-60000 ms; using {} ms",
+            POLL_AWAIT_TIME_MS_CONFIG,
+            sourceConfig.getLong(POLL_AWAIT_TIME_MS_CONFIG),
+            sourceConfig.getPollAwaitTimeMs());
+      }
       boolean shouldCopyData = shouldCopyData(context, sourceConfig);
       String connectorName = JmxStatisticsManager.getConnectorName(props);
       statisticsManager = new JmxStatisticsManager(shouldCopyData, connectorName);
@@ -144,7 +151,6 @@ public final class MongoSourceTask extends SourceTask {
       MongoClientSettings.Builder builder =
           MongoClientSettings.builder()
               .applyConnectionString(sourceConfig.getConnectionString())
-              .applyToSocketSettings(socket -> setReadTimeout(socket, sourceConfig))
               .addCommandListener(statisticsCommandListener)
               .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sourceConfig));
 
@@ -157,11 +163,26 @@ public final class MongoSourceTask extends SourceTask {
 
       setServerApi(builder, sourceConfig);
 
+      if (shouldCopyData) {
+        // Copy-existing aggregations can legitimately take longer than the read timeout before
+        // the first batch (blocking $sort / $group, unindexed $match), so they get their own client
+        // without it.
+        MongoClient copyClient =
+            MongoClients.create(
+                builder.build(),
+                getMongoDriverInformation(CONNECTOR_TYPE, sourceConfig.getString(PROVIDER_CONFIG)));
+        try {
+          copyDataManager = new MongoCopyDataManager(sourceConfig, copyClient, true);
+        } catch (RuntimeException e) {
+          copyClient.close();
+          throw e;
+        }
+      }
+      builder.applyToSocketSettings(socket -> setReadTimeout(socket, sourceConfig));
       mongoClient =
           MongoClients.create(
               builder.build(),
               getMongoDriverInformation(CONNECTOR_TYPE, sourceConfig.getString(PROVIDER_CONFIG)));
-      copyDataManager = shouldCopyData ? new MongoCopyDataManager(sourceConfig, mongoClient) : null;
 
       startedTask =
           new StartedMongoSourceTask(
@@ -196,7 +217,7 @@ public final class MongoSourceTask extends SourceTask {
     if (sourceConfig.getConnectionString().getSocketTimeout() == null) {
       long readTimeoutMs =
           Math.max(
-              sourceConfig.getLong(POLL_AWAIT_TIME_MS_CONFIG) + READ_TIMEOUT_MARGIN_MS,
+              sourceConfig.getPollAwaitTimeMs() + READ_TIMEOUT_MARGIN_MS,
               MIN_READ_TIMEOUT_MS);
       socket.readTimeout((int) readTimeoutMs, TimeUnit.MILLISECONDS);
     }
