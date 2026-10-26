@@ -20,6 +20,7 @@ package com.mongodb.kafka.connect.sink;
 
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.PROVIDER_CONFIG;
 import static com.mongodb.kafka.connect.util.ConfigHelper.getMongoDriverInformation;
+import static com.mongodb.kafka.connect.util.MongoClientHelper.applyReadTimeoutIfUnset;
 import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
 import static com.mongodb.kafka.connect.util.SslConfigs.setupSsl;
 import static com.mongodb.kafka.connect.util.VisibleForTesting.AccessModifier.PRIVATE;
@@ -47,6 +48,8 @@ import com.mongodb.kafka.connect.util.VisibleForTesting;
 
 public class MongoSinkTask extends SinkTask {
   static final Logger LOGGER = LoggerFactory.getLogger(MongoSinkTask.class);
+  /** Socket read timeout used when the connection string has no {@code socketTimeoutMS}. */
+  private static final int READ_TIMEOUT_MS = 300_000;
   private static final String CONNECTOR_TYPE = "sink";
   private StartedMongoSinkTask startedTask;
 
@@ -154,6 +157,10 @@ public class MongoSinkTask extends SinkTask {
     MongoClientSettings.Builder builder =
         MongoClientSettings.builder()
             .applyConnectionString(sinkConfig.getConnectionString())
+            .applyToSocketSettings(
+                socketBuilder ->
+                    applyReadTimeoutIfUnset(
+                        socketBuilder, sinkConfig.getConnectionString(), READ_TIMEOUT_MS))
             .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sinkConfig));
     if (sinkConfig.getCustomCredentialProvider() != null) {
       builder.credential(
