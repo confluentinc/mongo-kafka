@@ -70,6 +70,7 @@ import org.bson.BsonDocument;
 
 import com.mongodb.MongoBulkWriteException;
 import com.mongodb.MongoCommandException;
+import com.mongodb.MongoConnectionPoolClearedException;
 import com.mongodb.MongoNamespace;
 import com.mongodb.MongoSocketReadTimeoutException;
 import com.mongodb.ServerAddress;
@@ -82,6 +83,8 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.ReplaceOneModel;
 import com.mongodb.client.model.WriteModel;
+import com.mongodb.connection.ClusterId;
+import com.mongodb.connection.ServerId;
 
 import com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.ErrorTolerance;
 import com.mongodb.kafka.connect.sink.dlq.ErrorReporter;
@@ -474,7 +477,100 @@ final class StartedMongoSinkTaskTest {
         () -> assertTrue(StartedMongoSinkTask.isTransient(bulkWriteException(16500))),
         () -> assertFalse(StartedMongoSinkTask.isTransient(bulkWriteException(11000))),
         () -> assertFalse(StartedMongoSinkTask.isTransient(bulkWriteException(16500, 11000))),
+        () ->
+            assertTrue(
+                StartedMongoSinkTask.isTransient(
+                    new MongoConnectionPoolClearedException(
+                        new ServerId(new ClusterId(), new ServerAddress()), null))),
         () -> assertFalse(StartedMongoSinkTask.isTransient(new RuntimeException())));
+  }
+
+  @Test
+  void putRetryDoesNotRewriteBatchesAlreadyWritten() {
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                // batch1
+                .thenReturn(BulkWriteResult.unacknowledged())
+                // batch2
+                .thenThrow(commandException(16500))
+                // batch2 redelivered
+                .thenReturn(BulkWriteResult.unacknowledged()));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records =
+        asList(Records.simpleValid(TEST_TOPIC, 0), Records.simpleValid(TEST_TOPIC2, 1));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    task.put(records);
+    List<Integer> writtenIds =
+        client.capturedBulkWrites().get(DEFAULT_NAMESPACE).stream()
+            .flatMap(bulkWrite -> bulkWrite.models().stream())
+            .map(model -> ((ReplaceOneModel<?>) model).getReplacement())
+            .map(doc -> ((BsonDocument) doc).getInt32("_id").getValue())
+            .collect(Collectors.toList());
+    assertEquals(asList(0, 1, 1), writtenIds);
+  }
+
+  @Test
+  void putRetryDoesNotRewriteWritesAppliedBeforeTheError() {
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(bulkWriteExceptionAt(1, 16500))
+                .thenReturn(BulkWriteResult.unacknowledged()));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records =
+        asList(
+            Records.simpleValid(TEST_TOPIC, 0),
+            Records.simpleValid(TEST_TOPIC, 1),
+            Records.simpleValid(TEST_TOPIC, 2));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    task.put(records);
+    List<BulkWritesCapturingClient.CapturedBulkWrite> bulkWrites =
+        client.capturedBulkWrites().get(DEFAULT_NAMESPACE);
+    assertEquals(2, bulkWrites.size());
+    assertEquals(2, bulkWrites.get(1).models().size());
+  }
+
+  @Test
+  void putRetryDoesNotReportTheSameRecordTwice() {
+    properties.put(MongoSinkTopicConfig.ERRORS_TOLERANCE_CONFIG, ErrorTolerance.ALL.value());
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(commandException(16500))
+                .thenReturn(BulkWriteResult.unacknowledged()));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records =
+        asList(Records.simpleInvalid(TEST_TOPIC, 0), Records.simpleValid(TEST_TOPIC, 1));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    task.put(records);
+    assertEquals(1, errorReporter.reported().size());
+  }
+
+  @Test
+  void putProcessesRecordsAgainAfterASuccessfulPut() {
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(DEFAULT_NAMESPACE);
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    task.put(records);
+    task.put(records);
+    assertEquals(2, client.capturedBulkWrites().get(DEFAULT_NAMESPACE).size());
+  }
+
+  private static MongoBulkWriteException bulkWriteExceptionAt(final int index, final int code) {
+    return new MongoBulkWriteException(
+        BulkWriteResult.unacknowledged(),
+        singletonList(new BulkWriteError(code, "", BsonDocument.parse("{}"), index)),
+        null,
+        new ServerAddress(),
+        emptySet());
   }
 
   @Test
@@ -494,7 +590,7 @@ final class StartedMongoSinkTaskTest {
     assertEquals(StartedMongoSinkTask.MAX_CONSECUTIVE_RETRIES, timeouts.size());
     assertTrue(
         timeouts.stream()
-            .allMatch(t -> t >= 0 && t <= StartedMongoSinkTask.RETRY_BACKOFF_CAP_MS),
+            .allMatch(t -> t >= 1 && t <= StartedMongoSinkTask.RETRY_BACKOFF_CAP_MS),
         timeouts::toString);
     assertThrows(DataException.class, () -> task.put(records));
   }

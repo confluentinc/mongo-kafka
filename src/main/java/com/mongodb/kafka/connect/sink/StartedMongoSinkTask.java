@@ -26,6 +26,7 @@ import static java.util.Arrays.asList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
@@ -40,6 +41,7 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.bson.BsonDocument;
 
 import com.mongodb.MongoBulkWriteException;
+import com.mongodb.MongoConnectionPoolClearedException;
 import com.mongodb.MongoException;
 import com.mongodb.MongoNamespace;
 import com.mongodb.MongoSocketException;
@@ -97,6 +99,12 @@ final class StartedMongoSinkTask implements AutoCloseable {
   private final LongConsumer retryTimeout;
   private final Set<MongoNamespace> checkedTimeseriesNamespaces;
   private int consecutiveRetries;
+  /**
+   * Records of the current {@code put()} that are already written or reported to the DLQ. Kept
+   * across a {@link RetriableException} so the redelivered {@code put()} skips them, and cleared
+   * once a {@code put()} completes.
+   */
+  private final Set<RecordPosition> handledRecords = new HashSet<>();
 
   private final SinkTaskStatistics statistics;
   private final InnerOuterTimer inTaskPutInConnectFrameworkTimer;
@@ -120,7 +128,11 @@ final class StartedMongoSinkTask implements AutoCloseable {
       final LongConsumer retryTimeout) {
     this.sinkConfig = sinkConfig;
     this.mongoClient = mongoClient;
-    this.errorReporter = errorReporter;
+    this.errorReporter =
+        (record, e) -> {
+          errorReporter.report(record, e);
+          handledRecords.add(new RecordPosition(record));
+        };
     this.retryTimeout = retryTimeout;
     checkedTimeseriesNamespaces = new HashSet<>();
     statistics = new SinkTaskStatistics(getMBeanName());
@@ -168,14 +180,24 @@ final class StartedMongoSinkTask implements AutoCloseable {
         Timer processingTime = Timer.start();
         List<List<MongoProcessedSinkRecordData>> batches =
             MongoSinkRecordProcessor.orderedGroupByTopicAndNamespace(
-                records, sinkConfig, errorReporter);
+                withoutHandledRecords(records), sinkConfig, errorReporter);
         statistics.getProcessingPhases().sample(processingTime.getElapsedTime().toMillis());
         for (List<MongoProcessedSinkRecordData> batch : batches) {
           bulkWriteBatch(batch);
         }
         consecutiveRetries = 0;
+        handledRecords.clear();
       }
     }
+  }
+
+  private Collection<SinkRecord> withoutHandledRecords(final Collection<SinkRecord> records) {
+    if (handledRecords.isEmpty()) {
+      return records;
+    }
+    return records.stream()
+        .filter(record -> !handledRecords.contains(new RecordPosition(record)))
+        .collect(Collectors.toList());
   }
 
   private void trackLatestRecordTimestampOffset(final Collection<SinkRecord> records) {
@@ -220,9 +242,13 @@ final class StartedMongoSinkTask implements AutoCloseable {
       statistics.getBatchWritesSuccessful().sample(writeTime.getElapsedTime().toMillis());
       statistics.getRecordsSuccessful().sample(batch.size());
       LOGGER.debug("Mongodb bulk write result: {}", result);
+      batch.forEach(record -> handledRecords.add(new RecordPosition(record.getSinkRecord())));
     } catch (RuntimeException e) {
       statistics.getBatchWritesFailed().sample(writeTime.getElapsedTime().toMillis());
       statistics.getRecordsFailed().sample(batch.size());
+      if (e instanceof MongoBulkWriteException) {
+        markAppliedWrites(batch, bulkWriteOrdered, (MongoBulkWriteException) e);
+      }
       retryIfTransient(e);
       if (config.tolerateDataErrors() && !(e instanceof MongoBulkWriteException)) {
         LOGGER.trace("non Data Error, failing the connector", e);
@@ -242,13 +268,36 @@ final class StartedMongoSinkTask implements AutoCloseable {
   }
 
   /**
+   * Marks the writes of a failed batch that the server applied. With a write concern error the
+   * applied writes may not be durable, so they are left to be written again.
+   */
+  private void markAppliedWrites(
+      final List<MongoProcessedSinkRecordData> batch,
+      final boolean ordered,
+      final MongoBulkWriteException e) {
+    if (e.getWriteConcernError() != null) {
+      return;
+    }
+    Set<Integer> failedIndices =
+        e.getWriteErrors().stream().map(BulkWriteError::getIndex).collect(Collectors.toSet());
+    int end = ordered ? failedIndices.stream().min(Integer::compare).orElse(0) : batch.size();
+    for (int i = 0; i < end; i++) {
+      if (!failedIndices.contains(i)) {
+        handledRecords.add(new RecordPosition(batch.get(i).getSinkRecord()));
+      }
+    }
+  }
+
+  /**
    * Throws a {@link RetriableException} for a transient error, so the framework redelivers the
    * same records after a capped exponential backoff with full jitter instead of failing the task
    * or dead-lettering them. Once {@link #MAX_CONSECUTIVE_RETRIES} retries in a row have failed,
    * returns, and the error is handled as before.
    *
-   * <p>Retrying redelivers the whole {@code put()}, so batches that were already written are
-   * written again: safe for the default replace-with-upsert write model strategy.
+   * <p>The framework redelivers the whole {@code put()}; records that were already written or
+   * reported to the DLQ are skipped then, see {@link #handledRecords}. This matters because with
+   * the default {@code BsonOidStrategy} a record without an {@code _id} gets a new one every time
+   * it is processed, so writing it again would duplicate the document.
    */
   private void retryIfTransient(final RuntimeException e) {
     if (!isTransient(e) || consecutiveRetries >= MAX_CONSECUTIVE_RETRIES) {
@@ -257,7 +306,8 @@ final class StartedMongoSinkTask implements AutoCloseable {
     consecutiveRetries++;
     long capMs =
         Math.min(RETRY_BACKOFF_CAP_MS, RETRY_BACKOFF_BASE_MS << Math.min(consecutiveRetries - 1, 16));
-    long backoffMs = ThreadLocalRandom.current().nextLong(capMs + 1);
+    // The framework ignores a timeout of 0 and waits for the next offset commit instead.
+    long backoffMs = 1 + ThreadLocalRandom.current().nextLong(capMs);
     LOGGER.warn(
         "Transient error writing to MongoDB ({}), retry {} of {} in {} ms",
         errorSummary(e),
@@ -282,7 +332,10 @@ final class StartedMongoSinkTask implements AutoCloseable {
       boolean anyError = !writeErrors.isEmpty() || bulkWriteException.getWriteConcernError() != null;
       return anyError && writeErrorsTransient && writeConcernErrorTransient;
     }
-    if (e instanceof MongoSocketException || e instanceof MongoTimeoutException) {
+    // The driver retries a cleared pool once but does not label it as a retryable write error.
+    if (e instanceof MongoSocketException
+        || e instanceof MongoTimeoutException
+        || e instanceof MongoConnectionPoolClearedException) {
       return true;
     }
     if (e instanceof MongoException) {
@@ -407,5 +460,37 @@ final class StartedMongoSinkTask implements AutoCloseable {
         records.size(),
         e.getClass().getName());
     LOGGER.debug("Failed to put {} records into the sink (full detail)", records.size(), e);
+  }
+
+  /** Identifies a record across redeliveries. */
+  private static final class RecordPosition {
+    private final String topic;
+    private final Integer partition;
+    private final long offset;
+
+    RecordPosition(final SinkRecord record) {
+      topic = record.topic();
+      partition = record.kafkaPartition();
+      offset = record.kafkaOffset();
+    }
+
+    @Override
+    public boolean equals(final Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (!(o instanceof RecordPosition)) {
+        return false;
+      }
+      RecordPosition other = (RecordPosition) o;
+      return offset == other.offset
+          && topic.equals(other.topic)
+          && Objects.equals(partition, other.partition);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(topic, partition, offset);
+    }
   }
 }
