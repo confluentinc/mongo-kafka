@@ -24,8 +24,10 @@ import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
 import static com.mongodb.kafka.connect.util.SslConfigs.setupSsl;
 import static com.mongodb.kafka.connect.util.VisibleForTesting.AccessModifier.PRIVATE;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -40,6 +42,7 @@ import org.slf4j.LoggerFactory;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.connection.SocketSettings;
 
 import com.mongodb.kafka.connect.Versions;
 import com.mongodb.kafka.connect.sink.dlq.ErrorReporter;
@@ -48,6 +51,7 @@ import com.mongodb.kafka.connect.util.VisibleForTesting;
 public class MongoSinkTask extends SinkTask {
   static final Logger LOGGER = LoggerFactory.getLogger(MongoSinkTask.class);
   private static final String CONNECTOR_TYPE = "sink";
+  static final long DEFAULT_READ_TIMEOUT_MS = 60_000;
   private StartedMongoSinkTask startedTask;
 
   @Override
@@ -68,7 +72,9 @@ public class MongoSinkTask extends SinkTask {
     try {
       MongoSinkConfig sinkConfig = new MongoSinkConfig(props);
       client = createMongoClient(sinkConfig);
-      startedTask = new StartedMongoSinkTask(sinkConfig, client, createErrorReporter());
+      startedTask =
+          new StartedMongoSinkTask(
+              sinkConfig, client, createErrorReporter(), timeoutMs -> context.timeout(timeoutMs));
     } catch (RuntimeException taskStartingException) {
       //noinspection EmptyTryBlock
       try (MongoClient autoCloseableClient = client) {
@@ -150,11 +156,36 @@ public class MongoSinkTask extends SinkTask {
     return (record, e) -> {};
   }
 
+  /**
+   * The driver's default read timeout is infinite, so a half-open connection in the middle of a
+   * write blocks the task forever. A {@code socketTimeoutMS} set in the connection string is left
+   * as is.
+   */
+  @VisibleForTesting(otherwise = PRIVATE)
+  static void setReadTimeout(final SocketSettings.Builder socket, final MongoSinkConfig sinkConfig) {
+    if (sinkConfig.getConnectionString().getSocketTimeout() == null) {
+      socket.readTimeout((int) DEFAULT_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+    }
+  }
+
+  /** Lets the customer attribute the load in Atlas to this connector. */
+  @VisibleForTesting(otherwise = PRIVATE)
+  static String applicationName(final Map<String, String> props) {
+    String base = "confluent-mongodb-sink/" + Versions.VERSION;
+    String name = base + "/" + props.getOrDefault("name", "unknown");
+    // The driver rejects application names over 128 bytes.
+    return name.getBytes(StandardCharsets.UTF_8).length <= 128 ? name : base;
+  }
+
   private static MongoClient createMongoClient(final MongoSinkConfig sinkConfig) {
     MongoClientSettings.Builder builder =
         MongoClientSettings.builder()
             .applyConnectionString(sinkConfig.getConnectionString())
+            .applyToSocketSettings(socket -> setReadTimeout(socket, sinkConfig))
             .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sinkConfig));
+    if (sinkConfig.getConnectionString().getApplicationName() == null) {
+      builder.applicationName(applicationName(sinkConfig.getOriginals()));
+    }
     if (sinkConfig.getCustomCredentialProvider() != null) {
       builder.credential(
           sinkConfig.getCustomCredentialProvider().getCustomCredential(sinkConfig.getOriginals()));
