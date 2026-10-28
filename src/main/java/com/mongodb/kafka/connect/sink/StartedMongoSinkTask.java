@@ -24,8 +24,10 @@ import static com.mongodb.kafka.connect.util.TimeseriesValidation.validateCollec
 import static java.util.Arrays.asList;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -105,6 +107,15 @@ final class StartedMongoSinkTask implements AutoCloseable {
    * once a {@code put()} completes.
    */
   private final Set<RecordPosition> handledRecords = new HashSet<>();
+  /**
+   * How the records of the current {@code put()} were processed. Kept across a {@link
+   * RetriableException} so a redelivered record is written with the same write model, including an
+   * {@code _id} the id strategy generated. Resending a write whose outcome is unknown, such as one
+   * that timed out, then replaces the document it may have written instead of adding another.
+   * Cleared once a {@code put()} completes.
+   */
+  private final Map<RecordPosition, MongoProcessedSinkRecordData> processedRecords =
+      new HashMap<>();
 
   private final SinkTaskStatistics statistics;
   private final InnerOuterTimer inTaskPutInConnectFrameworkTimer;
@@ -180,15 +191,21 @@ final class StartedMongoSinkTask implements AutoCloseable {
         Timer processingTime = Timer.start();
         List<List<MongoProcessedSinkRecordData>> batches =
             MongoSinkRecordProcessor.orderedGroupByTopicAndNamespace(
-                withoutHandledRecords(records), sinkConfig, errorReporter);
+                withoutHandledRecords(records), this::process, errorReporter);
         statistics.getProcessingPhases().sample(processingTime.getElapsedTime().toMillis());
         for (List<MongoProcessedSinkRecordData> batch : batches) {
           bulkWriteBatch(batch);
         }
         consecutiveRetries = 0;
         handledRecords.clear();
+        processedRecords.clear();
       }
     }
+  }
+
+  private MongoProcessedSinkRecordData process(final SinkRecord record) {
+    return processedRecords.computeIfAbsent(
+        new RecordPosition(record), position -> new MongoProcessedSinkRecordData(record, sinkConfig));
   }
 
   private Collection<SinkRecord> withoutHandledRecords(final Collection<SinkRecord> records) {
@@ -295,9 +312,10 @@ final class StartedMongoSinkTask implements AutoCloseable {
    * returns, and the error is handled as before.
    *
    * <p>The framework redelivers the whole {@code put()}; records that were already written or
-   * reported to the DLQ are skipped then, see {@link #handledRecords}. This matters because with
-   * the default {@code BsonOidStrategy} a record without an {@code _id} gets a new one every time
-   * it is processed, so writing it again would duplicate the document.
+   * reported to the DLQ are skipped then, see {@link #handledRecords}, and the rest are written
+   * with the write models of the failed attempt, see {@link #processedRecords}. This matters
+   * because with the default {@code BsonOidStrategy} a record without an {@code _id} gets a new one
+   * every time it is processed, so processing it again would duplicate the document.
    */
   private void retryIfTransient(final RuntimeException e) {
     if (!isTransient(e) || consecutiveRetries >= MAX_CONSECUTIVE_RETRIES) {

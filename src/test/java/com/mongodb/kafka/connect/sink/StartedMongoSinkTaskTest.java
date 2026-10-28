@@ -67,6 +67,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.internal.stubbing.defaultanswers.ReturnsSmartNulls;
 
 import org.bson.BsonDocument;
+import org.bson.BsonValue;
 
 import com.mongodb.MongoBulkWriteException;
 import com.mongodb.MongoCommandException;
@@ -564,6 +565,46 @@ final class StartedMongoSinkTaskTest {
     assertEquals(2, client.capturedBulkWrites().get(DEFAULT_NAMESPACE).size());
   }
 
+  @Test
+  void putRetryResendsAWriteThatTimedOutWithTheSameId() {
+    assertRetryResendsTheSameId(
+        new MongoSocketReadTimeoutException(
+            "read timed out", new ServerAddress(), new RuntimeException()));
+  }
+
+  @Test
+  void putRetryResendsAWriteWithAWriteConcernErrorWithTheSameId() {
+    assertRetryResendsTheSameId(
+        new MongoBulkWriteException(
+            BulkWriteResult.unacknowledged(),
+            emptyList(),
+            new WriteConcernError(64, "", "", BsonDocument.parse("{}")),
+            new ServerAddress(),
+            emptySet()));
+  }
+
+  /** The failed write may have been applied, so resending it must not add a second document. */
+  private void assertRetryResendsTheSameId(final RuntimeException e) {
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(e)
+                .thenReturn(BulkWriteResult.unacknowledged()));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records = singletonList(Records.withoutId(TEST_TOPIC, 0));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    task.put(records);
+    List<BsonValue> writtenIds =
+        client.capturedBulkWrites().get(DEFAULT_NAMESPACE).stream()
+            .flatMap(bulkWrite -> bulkWrite.models().stream())
+            .map(model -> ((BsonDocument) ((ReplaceOneModel<?>) model).getReplacement()).get("_id"))
+            .collect(Collectors.toList());
+    assertEquals(2, writtenIds.size());
+    assertEquals(writtenIds.get(0), writtenIds.get(1));
+  }
+
   private static MongoBulkWriteException bulkWriteExceptionAt(final int index, final int code) {
     return new MongoBulkWriteException(
         BulkWriteResult.unacknowledged(),
@@ -664,6 +705,18 @@ final class StartedMongoSinkTaskTest {
           "",
           Schema.STRING_SCHEMA,
           String.format("{\"_id\": %d}", idx),
+          idx);
+    }
+
+    /** The default {@code BsonOidStrategy} generates an {@code _id} for this record. */
+    static SinkRecord withoutId(final String topicName, final int idx) {
+      return new SinkRecord(
+          topicName,
+          0,
+          Schema.STRING_SCHEMA,
+          "",
+          Schema.STRING_SCHEMA,
+          String.format("{\"n\": %d}", idx),
           idx);
     }
 

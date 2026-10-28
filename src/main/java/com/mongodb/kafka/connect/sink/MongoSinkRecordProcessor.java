@@ -21,6 +21,7 @@ import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.MAX_BATCH_SIZE
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.function.Function;
 
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
@@ -35,6 +36,14 @@ final class MongoSinkRecordProcessor {
       final Collection<SinkRecord> records,
       final MongoSinkConfig sinkConfig,
       final ErrorReporter errorReporter) {
+    return orderedGroupByTopicAndNamespace(
+        records, record -> new MongoProcessedSinkRecordData(record, sinkConfig), errorReporter);
+  }
+
+  static List<List<MongoProcessedSinkRecordData>> orderedGroupByTopicAndNamespace(
+      final Collection<SinkRecord> records,
+      final Function<SinkRecord, MongoProcessedSinkRecordData> processor,
+      final ErrorReporter errorReporter) {
     LOGGER.debug("Number of sink records to process: {}", records.size());
 
     List<List<MongoProcessedSinkRecordData>> orderedProcessedSinkRecordData = new ArrayList<>();
@@ -42,8 +51,7 @@ final class MongoSinkRecordProcessor {
     MongoProcessedSinkRecordData previous = null;
 
     for (SinkRecord record : records) {
-      MongoProcessedSinkRecordData processedData =
-          new MongoProcessedSinkRecordData(record, sinkConfig);
+      MongoProcessedSinkRecordData processedData = processor.apply(record);
 
       if (processedData.getException() != null) {
         errorReporter.report(processedData.getSinkRecord(), processedData.getException());
