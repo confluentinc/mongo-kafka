@@ -555,6 +555,35 @@ final class StartedMongoSinkTaskTest {
   }
 
   @Test
+  void putRetryTellsApartRecordsRoutedToTheSameTopic() {
+    properties.put(MongoSinkTopicConfig.MAX_BATCH_SIZE_CONFIG, "1");
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                // batch1
+                .thenReturn(BulkWriteResult.unacknowledged())
+                // batch2
+                .thenThrow(commandException(16500))
+                // batch2 redelivered
+                .thenReturn(BulkWriteResult.unacknowledged()));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records =
+        asList(
+            Records.routed("source1", TEST_TOPIC, 0), Records.routed("source2", TEST_TOPIC, 1));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    task.put(records);
+    List<Integer> writtenIds =
+        client.capturedBulkWrites().get(DEFAULT_NAMESPACE).stream()
+            .flatMap(bulkWrite -> bulkWrite.models().stream())
+            .map(model -> ((ReplaceOneModel<?>) model).getReplacement())
+            .map(doc -> ((BsonDocument) doc).getInt32("_id").getValue())
+            .collect(Collectors.toList());
+    assertEquals(asList(0, 1, 1), writtenIds);
+  }
+
+  @Test
   void putProcessesRecordsAgainAfterASuccessfulPut() {
     MongoSinkConfig config = new MongoSinkConfig(properties);
     client.configureCapturing(DEFAULT_NAMESPACE);
@@ -718,6 +747,30 @@ final class StartedMongoSinkTaskTest {
           Schema.STRING_SCHEMA,
           String.format("{\"n\": %d}", idx),
           idx);
+    }
+
+    /**
+     * Read at the same partition and offset as the other routed records, but of {@code
+     * sourceTopic}, then moved to {@code topicName} the way RegexRouter does it.
+     */
+    static SinkRecord routed(final String sourceTopic, final String topicName, final int idx) {
+      SinkRecord record =
+          new SinkRecord(
+              sourceTopic,
+              0,
+              Schema.STRING_SCHEMA,
+              "",
+              Schema.STRING_SCHEMA,
+              String.format("{\"_id\": %d}", idx),
+              5);
+      return record.newRecord(
+          topicName,
+          record.kafkaPartition(),
+          record.keySchema(),
+          record.key(),
+          record.valueSchema(),
+          record.value(),
+          record.timestamp());
     }
 
     static SinkRecord simpleInvalid(final String topicName, final int idx) {

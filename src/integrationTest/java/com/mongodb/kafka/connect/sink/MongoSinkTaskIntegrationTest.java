@@ -221,7 +221,8 @@ public class MongoSinkTaskIntegrationTest extends MongoKafkaTestCase {
                   })
               .collect(toList());
 
-      List<SinkRecord> sinkRecords = createRecords(documents);
+      List<SinkRecord> sinkRecords =
+          createRecords(documents.stream(), Document::toJson, Document::toJson, d -> d.get("c", 0));
 
       task.put(sinkRecords);
 
@@ -324,7 +325,7 @@ public class MongoSinkTaskIntegrationTest extends MongoKafkaTestCase {
               documents.stream(),
               Document::toJson,
               d -> d.get("_id", 0) != 4 ? d.toJson() : "a",
-              d -> d.get("c", 0));
+              d -> d.get("_id", 0));
       task.put(sinkRecords);
 
       assertIterableEquals(
@@ -339,7 +340,7 @@ public class MongoSinkTaskIntegrationTest extends MongoKafkaTestCase {
       DataException e = assertThrows(DataException.class, () -> task.put(sinkRecords));
       assertTrue(
           e.getMessage()
-              .contains("Could not convert value in topic:topic-test at partition:0 offset:0 into a BsonDocument."));
+              .contains("Could not convert value in topic:topic-test at partition:0 offset:4 into a BsonDocument."));
     }
   }
 

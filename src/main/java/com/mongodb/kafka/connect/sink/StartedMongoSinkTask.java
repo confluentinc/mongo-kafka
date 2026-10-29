@@ -480,16 +480,37 @@ final class StartedMongoSinkTask implements AutoCloseable {
     LOGGER.debug("Failed to put {} records into the sink (full detail)", records.size(), e);
   }
 
-  /** Identifies a record across redeliveries. */
+  /**
+   * Identifies a record across redeliveries by where it was read from. A transform such as
+   * RegexRouter can route records of different topics to one topic, so this uses the coordinates
+   * from before any transform.
+   */
   private static final class RecordPosition {
+    private static final boolean HAS_ORIGINAL_COORDINATES = hasOriginalCoordinates();
     private final String topic;
     private final Integer partition;
     private final long offset;
 
     RecordPosition(final SinkRecord record) {
-      topic = record.topic();
-      partition = record.kafkaPartition();
-      offset = record.kafkaOffset();
+      if (HAS_ORIGINAL_COORDINATES) {
+        topic = record.originalTopic();
+        partition = record.originalKafkaPartition();
+        offset = record.originalKafkaOffset();
+      } else {
+        topic = record.topic();
+        partition = record.kafkaPartition();
+        offset = record.kafkaOffset();
+      }
+    }
+
+    private static boolean hasOriginalCoordinates() {
+      try {
+        SinkRecord.class.getMethod("originalTopic");
+        return true;
+      } catch (NoSuchMethodException e) {
+        // Will occur in Connect runtimes earlier than 3.6
+        return false;
+      }
     }
 
     @Override
