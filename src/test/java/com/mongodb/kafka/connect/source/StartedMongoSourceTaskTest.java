@@ -202,6 +202,26 @@ final class StartedMongoSourceTaskTest {
     }
 
     @Test
+    void doesNotFailTheTaskWhenErrorsAreTolerated() {
+      Map<String, String> properties = new HashMap<>();
+      properties.put(MongoSourceConfig.ERRORS_TOLERANCE_CONFIG, "all");
+      properties.put(MongoSourceConfig.POLL_RETRY_MAX_ATTEMPTS_CONFIG, "2");
+      properties.put(MongoSourceConfig.POLL_RETRY_BACKOFF_MS_CONFIG, "0");
+      MongoChangeStreamCursor<?> cursor = cast(mock(MongoChangeStreamCursor.class));
+      when(cursor.getServerCursor()).thenReturn(new ServerCursor(1, new ServerAddress()));
+      when(cursor.tryNext())
+          .thenThrow(
+              new MongoSocketReadTimeoutException(
+                  "timed out", new ServerAddress(), new IOException()));
+      task = createTask(properties, cursor);
+
+      for (int i = 0; i < 5; i++) {
+        task.poll();
+      }
+      verify(cursor, times(5)).tryNext();
+    }
+
+    @Test
     void successfulReadResetsTheFailureCount() {
       Map<String, String> properties = new HashMap<>();
       properties.put(MongoSourceConfig.POLL_RETRY_MAX_ATTEMPTS_CONFIG, "2");

@@ -379,7 +379,8 @@ public class MongoSourceConfig extends AbstractConfig {
   public static final String POLL_RETRY_MAX_ATTEMPTS_CONFIG = "poll.retry.max.attempts";
   private static final String POLL_RETRY_MAX_ATTEMPTS_DOC =
       "The maximum number of consecutive failures to read from the change stream cursor before the "
-          + "task fails. The count resets after a successful read. Set to 0 to retry indefinitely.";
+          + "task fails. The count resets after a successful read. Set to 0 to retry indefinitely. "
+          + "Only applies when `errors.tolerance` is `none`; with `all` the cursor is always recreated.";
   private static final int POLL_RETRY_MAX_ATTEMPTS_DEFAULT = 20;
   private static final String POLL_RETRY_MAX_ATTEMPTS_DISPLAY = "Poll retry max attempts";
 

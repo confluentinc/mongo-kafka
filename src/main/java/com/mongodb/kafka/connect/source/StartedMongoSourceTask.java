@@ -640,7 +640,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
             LOGGER.error(
                 "An exception occurred when trying to get the next item from the Change Stream {}",
                 safeErrorDetail(e));
-            recordCursorFailure(e);
+            recordCursorFailure(e, false);
           }
         } else {
           LOGGER.error(
@@ -649,7 +649,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
           if (e instanceof MongoQueryException && ((MongoQueryException) e).getErrorCode() == 286) {
             throw new ConnectException("Failed to resume change stream. " + safeErrorDetail(e));
           }
-          recordCursorFailure(e);
+          recordCursorFailure(e, true);
         }
       }
     } catch (Exception e) {
@@ -664,14 +664,16 @@ final class StartedMongoSourceTask implements AutoCloseable {
   }
 
   /**
-   * Counts a failure to read from the cursor, failing the task once {@code poll.retry.max.attempts}
-   * consecutive failures have occurred. The raw exception is neither logged nor chained because its
+   * Counts a failure to read from the cursor, which makes the next cursor recreation wait. When
+   * {@code enforceCap} is set, also fails the task once {@code poll.retry.max.attempts} consecutive
+   * failures have occurred; with {@code errors.tolerance=all} it is not set, so the cursor is
+   * recreated indefinitely as before. The raw exception is neither logged nor chained because its
    * message can echo record-derived content.
    */
-  private void recordCursorFailure(final MongoException e) {
+  private void recordCursorFailure(final MongoException e, final boolean enforceCap) {
     consecutiveCursorFailures++;
     int maxAttempts = sourceConfig.getInt(POLL_RETRY_MAX_ATTEMPTS_CONFIG);
-    if (maxAttempts > 0 && consecutiveCursorFailures >= maxAttempts) {
+    if (enforceCap && maxAttempts > 0 && consecutiveCursorFailures >= maxAttempts) {
       throw new ConnectException(
           String.format(
               "Failed to read from the change stream %d consecutive times, giving up. "
