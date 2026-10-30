@@ -425,7 +425,25 @@ class MongoSourceConfigTest {
                 100,
                 createSourceConfig(POLL_AWAIT_TIME_MS_CONFIG, "100")
                     .getLong(POLL_AWAIT_TIME_MS_CONFIG)),
+        () -> assertEquals(1, createSourceConfig(POLL_AWAIT_TIME_MS_CONFIG, "1").getLong(POLL_AWAIT_TIME_MS_CONFIG)),
+        () -> assertEquals(300000, createSourceConfig(POLL_AWAIT_TIME_MS_CONFIG, "300000").getLong(POLL_AWAIT_TIME_MS_CONFIG)),
+        () -> assertInvalid(POLL_AWAIT_TIME_MS_CONFIG, "300001"),
         () -> assertInvalid(POLL_AWAIT_TIME_MS_CONFIG, "0"));
+  }
+
+  @Test
+  @DisplayName("test poll retry configuration")
+  void testPollRetryConfigurations() {
+    assertAll(
+        "Poll retry configuration",
+        () -> assertEquals(1000, createSourceConfig().getLong("poll.retry.backoff.ms")),
+        () -> assertEquals(30000, createSourceConfig().getLong("poll.retry.backoff.max.ms")),
+        () -> assertEquals(20, createSourceConfig().getInt("poll.retry.max.attempts")),
+        () -> assertEquals(0, createSourceConfig("poll.retry.backoff.ms", "0").getLong("poll.retry.backoff.ms")),
+        () -> assertEquals(0, createSourceConfig("poll.retry.max.attempts", "0").getInt("poll.retry.max.attempts")),
+        () -> assertInvalid("poll.retry.backoff.ms", "-1"),
+        () -> assertInvalid("poll.retry.backoff.max.ms", "-1"),
+        () -> assertInvalid("poll.retry.max.attempts", "-1"));
   }
 
   @Test

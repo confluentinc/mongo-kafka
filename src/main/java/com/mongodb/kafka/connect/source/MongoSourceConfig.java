@@ -357,7 +357,32 @@ public class MongoSourceConfig extends AbstractConfig {
       "The maximum amount of time in milliseconds the server waits for new data changes to report to the change stream cursor "
           + "before returning an empty batch.";
   private static final long POLL_AWAIT_TIME_MS_DEFAULT = 5000;
+  private static final long POLL_AWAIT_TIME_MS_MAX = 300000;
   private static final String POLL_AWAIT_TIME_MS_DISPLAY = "Poll await time (ms)";
+
+  public static final String POLL_RETRY_BACKOFF_MS_CONFIG = "poll.retry.backoff.ms";
+  private static final String POLL_RETRY_BACKOFF_MS_DOC =
+      "The initial time in milliseconds to wait before recreating the change stream cursor after a "
+          + "failure to read from it, for example a socket read timeout. The wait doubles after each "
+          + "consecutive failure, up to `poll.retry.backoff.max.ms`, and is randomly jittered. "
+          + "Set to 0 to disable the wait.";
+  private static final long POLL_RETRY_BACKOFF_MS_DEFAULT = 1000;
+  private static final String POLL_RETRY_BACKOFF_MS_DISPLAY = "Poll retry backoff (ms)";
+
+  public static final String POLL_RETRY_BACKOFF_MAX_MS_CONFIG = "poll.retry.backoff.max.ms";
+  private static final String POLL_RETRY_BACKOFF_MAX_MS_DOC =
+      "The maximum time in milliseconds to wait before recreating the change stream cursor after a "
+          + "failure to read from it.";
+  private static final long POLL_RETRY_BACKOFF_MAX_MS_DEFAULT = 30000;
+  private static final String POLL_RETRY_BACKOFF_MAX_MS_DISPLAY = "Poll retry max backoff (ms)";
+
+  public static final String POLL_RETRY_MAX_ATTEMPTS_CONFIG = "poll.retry.max.attempts";
+  private static final String POLL_RETRY_MAX_ATTEMPTS_DOC =
+      "The maximum number of consecutive failures to read from the change stream cursor before the "
+          + "task fails. The count resets after a successful read. Set to 0 to retry indefinitely. "
+          + "Only applies when `errors.tolerance` is `none`; with `all` the cursor is always recreated.";
+  private static final int POLL_RETRY_MAX_ATTEMPTS_DEFAULT = 20;
+  private static final String POLL_RETRY_MAX_ATTEMPTS_DISPLAY = "Poll retry max attempts";
 
   public static final String DATABASE_CONFIG = "database";
   private static final String DATABASE_DISPLAY = "The database to watch.";
@@ -1169,13 +1194,49 @@ public class MongoSourceConfig extends AbstractConfig {
         POLL_AWAIT_TIME_MS_CONFIG,
         Type.LONG,
         POLL_AWAIT_TIME_MS_DEFAULT,
-        ConfigDef.Range.atLeast(1),
+        ConfigDef.Range.between(1, POLL_AWAIT_TIME_MS_MAX),
         Importance.LOW,
         POLL_AWAIT_TIME_MS_DOC,
         group,
         ++orderInGroup,
         Width.MEDIUM,
         POLL_AWAIT_TIME_MS_DISPLAY);
+
+    configDef.define(
+        POLL_RETRY_BACKOFF_MS_CONFIG,
+        Type.LONG,
+        POLL_RETRY_BACKOFF_MS_DEFAULT,
+        ConfigDef.Range.atLeast(0),
+        Importance.LOW,
+        POLL_RETRY_BACKOFF_MS_DOC,
+        group,
+        ++orderInGroup,
+        Width.MEDIUM,
+        POLL_RETRY_BACKOFF_MS_DISPLAY);
+
+    configDef.define(
+        POLL_RETRY_BACKOFF_MAX_MS_CONFIG,
+        Type.LONG,
+        POLL_RETRY_BACKOFF_MAX_MS_DEFAULT,
+        ConfigDef.Range.atLeast(0),
+        Importance.LOW,
+        POLL_RETRY_BACKOFF_MAX_MS_DOC,
+        group,
+        ++orderInGroup,
+        Width.MEDIUM,
+        POLL_RETRY_BACKOFF_MAX_MS_DISPLAY);
+
+    configDef.define(
+        POLL_RETRY_MAX_ATTEMPTS_CONFIG,
+        Type.INT,
+        POLL_RETRY_MAX_ATTEMPTS_DEFAULT,
+        ConfigDef.Range.atLeast(0),
+        Importance.LOW,
+        POLL_RETRY_MAX_ATTEMPTS_DOC,
+        group,
+        ++orderInGroup,
+        Width.MEDIUM,
+        POLL_RETRY_MAX_ATTEMPTS_DISPLAY);
 
     group = "Topic mapping";
     orderInGroup = 0;
