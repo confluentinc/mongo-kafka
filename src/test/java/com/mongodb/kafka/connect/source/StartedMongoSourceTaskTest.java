@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -32,6 +33,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceTaskContext;
@@ -55,9 +57,14 @@ import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.MongoChangeStreamCursor;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.model.changestream.FullDocumentBeforeChange;
+import com.mongodb.connection.ClusterId;
+import com.mongodb.connection.ConnectionDescription;
+import com.mongodb.connection.ServerId;
+import com.mongodb.event.CommandFailedEvent;
 
 import com.mongodb.kafka.connect.source.MongoSourceConfig.StartupConfig.StartupMode;
 import com.mongodb.kafka.connect.source.statistics.JmxStatisticsManager;
+import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
 
 final class StartedMongoSourceTaskTest {
   @Nested
@@ -257,6 +264,25 @@ final class StartedMongoSourceTaskTest {
       when(client.watch()).thenReturn(cast(changeStreamIterable));
       return new StartedMongoSourceTask(
           () -> context, cfg, client, null, new JmxStatisticsManager(false, "unknown"));
+    }
+  }
+
+  static final class CommandFailureTest {
+    @Test
+    void socketFailureOfGetMoreIsSampledAndDoesNotThrow() {
+      CommandFailedEvent event =
+          new CommandFailedEvent(
+              1,
+              new ConnectionDescription(new ServerId(new ClusterId(), new ServerAddress())),
+              "getMore",
+              TimeUnit.MILLISECONDS.toNanos(20000),
+              new MongoSocketReadTimeoutException(
+                  "timed out", new ServerAddress(), new IOException()));
+      SourceTaskStatistics statistics = mock(SourceTaskStatistics.class, RETURNS_DEEP_STUBS);
+
+      MongoSourceTask.mongoCommandFailed(event, statistics);
+
+      verify(statistics.getGetmoreCommandsFailed()).sample(20000L);
     }
   }
 

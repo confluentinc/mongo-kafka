@@ -357,6 +357,7 @@ public class MongoSourceConfig extends AbstractConfig {
       "The maximum amount of time in milliseconds the server waits for new data changes to report to the change stream cursor "
           + "before returning an empty batch.";
   private static final long POLL_AWAIT_TIME_MS_DEFAULT = 5000;
+  /** The largest value in use on managed connectors at the time of writing, so none is rejected. */
   private static final long POLL_AWAIT_TIME_MS_MAX = 300000;
   private static final String POLL_AWAIT_TIME_MS_DISPLAY = "Poll await time (ms)";
 

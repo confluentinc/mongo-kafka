@@ -19,6 +19,7 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONF
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME_MS_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PROVIDER_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceExceptions.safeErrorDetail;
 import static com.mongodb.kafka.connect.util.Assertions.assertNotNull;
 import static com.mongodb.kafka.connect.util.ConfigHelper.getMongoDriverInformation;
 import static com.mongodb.kafka.connect.util.MongoClientHelper.applyReadTimeoutIfUnset;
@@ -41,6 +42,8 @@ import org.slf4j.LoggerFactory;
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
+import com.mongodb.MongoSocketException;
+import com.mongodb.MongoSocketReadTimeoutException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.event.CommandFailedEvent;
@@ -89,7 +92,13 @@ import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
  */
 public final class MongoSourceTask extends SourceTask {
   static final Logger LOGGER = LoggerFactory.getLogger(MongoSourceTask.class);
-  /** Added to {@code poll.await.time.ms} to get the socket read timeout. */
+  /**
+   * Added to {@code poll.await.time.ms} to get the socket read timeout. The margin is an estimate:
+   * a {@code getMore} that is slow but still working (a selective pipeline on a busy cluster, {@code
+   * fullDocument=updateLookup}, resuming from an old token) can exceed it, and the driver then
+   * resumes from the same token and repeats the same work. Raise {@code poll.await.time.ms} or set
+   * {@code socketTimeoutMS} in the connection string to allow more time.
+   */
   private static final int READ_TIMEOUT_MARGIN_MS = 15_000;
   private static final String CONNECTOR_TYPE = "source";
   public static final String ID_FIELD = "_id";
@@ -307,6 +316,22 @@ public final class MongoSourceTask extends SourceTask {
       currentStatistics.getGetmoreCommandsFailed().sample(elapsedTimeMs);
     } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
       currentStatistics.getInitialCommandsFailed().sample(elapsedTimeMs);
+    }
+    if (e instanceof MongoSocketException
+        && ("getMore".equals(commandName) || "aggregate".equals(commandName))) {
+      // The driver resumes the change stream after a network error without telling the task, so
+      // without this a repeating failure would not appear in the logs at all. The raw exception is
+      // not logged: its message can carry record-derived content.
+      LOGGER.warn(
+          "Command {} failed after {}ms: {}.{}",
+          commandName,
+          elapsedTimeMs,
+          safeErrorDetail(e),
+          e instanceof MongoSocketReadTimeoutException
+              ? " The server sent nothing before the socket read timeout. If this repeats, the"
+                  + " server may be slow to respond: consider raising `poll.await.time.ms` or"
+                  + " setting `socketTimeoutMS` in the connection string."
+              : "");
     }
   }
 }
