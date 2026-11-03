@@ -91,7 +91,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
               11602, // InterruptedDueToReplStateChange
               13435, // NotPrimaryNoSecondaryOk
               13436, // NotPrimaryOrSecondary
-              16500 // Request rate too large
+              16500 // Request rate too large (error code for Azure Cosmos DB for MongoDB)
               ));
 
   private static final String RETRYABLE_WRITE_ERROR_LABEL = "RetryableWriteError";
