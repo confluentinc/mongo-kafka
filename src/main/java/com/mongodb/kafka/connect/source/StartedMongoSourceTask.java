@@ -25,6 +25,9 @@ import static com.mongodb.kafka.connect.source.MongoSourceConfig.HEARTBEAT_INTER
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.HEARTBEAT_TOPIC_NAME_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME_MS_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_MAX_BATCH_SIZE_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_RETRY_BACKOFF_MAX_MS_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_RETRY_BACKOFF_MS_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_RETRY_MAX_ATTEMPTS_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PUBLISH_FULL_DOCUMENT_ONLY_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PUBLISH_FULL_DOCUMENT_ONLY_TOMBSTONE_ON_DELETE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.REMOVE_FIELD_ON_SCHEMA_MISMATCH_CONFIG;
@@ -55,6 +58,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -121,6 +125,8 @@ final class StartedMongoSourceTask implements AutoCloseable {
   private static final String INVALID_RESUME_TOKEN = "invalid resume token";
   private static final String NO_LONGER_IN_THE_OPLOG = "no longer be in the oplog";
 
+  private static final long BACKOFF_SLEEP_SLICE_MS = 250;
+
   private static final SchemaAndValueProducer TOMBSTONE_SCHEMA_AND_VALUE_PRODUCER =
       i -> SchemaAndValue.NULL;
 
@@ -141,6 +147,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
   private BsonDocument cachedResumeToken;
 
   @Nullable private MongoChangeStreamCursor<? extends BsonDocument> cursor;
+  private int consecutiveCursorFailures;
   private final StatisticsManager statisticsManager;
   private final InnerOuterTimer inTaskPollInConnectFrameworkTimer;
 
@@ -600,6 +607,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
     }
 
     if (cursor == null) {
+      backoffBeforeCursorRecreation();
       initializeCursorAndHeartbeatManager();
     } else if (cursor.getServerCursor() == null) {
       LOGGER.info("Cursor has been closed by the server - reinitializing");
@@ -619,6 +627,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
           batch.add(next);
         }
       } while (next != null && batch.size() < maxBatchSize && cursor.available() > 0);
+      consecutiveCursorFailures = 0;
     } catch (MongoException e) {
       closeCursor();
       if (isRunning) {
@@ -631,6 +640,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
             LOGGER.error(
                 "An exception occurred when trying to get the next item from the Change Stream {}",
                 safeErrorDetail(e));
+            recordCursorFailure(e, false);
           }
         } else {
           LOGGER.error(
@@ -639,6 +649,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
           if (e instanceof MongoQueryException && ((MongoQueryException) e).getErrorCode() == 286) {
             throw new ConnectException("Failed to resume change stream. " + safeErrorDetail(e));
           }
+          recordCursorFailure(e, true);
         }
       }
     } catch (Exception e) {
@@ -650,6 +661,67 @@ final class StartedMongoSourceTask implements AutoCloseable {
     }
 
     return batch;
+  }
+
+  /**
+   * Counts a failure to read from the cursor, which makes the next cursor recreation wait. When
+   * {@code enforceCap} is set, also fails the task once {@code poll.retry.max.attempts} consecutive
+   * failures have occurred; with {@code errors.tolerance=all} it is not set, so the cursor is
+   * recreated indefinitely as before. The raw exception is neither logged nor chained because its
+   * message can echo record-derived content.
+   */
+  private void recordCursorFailure(final MongoException e, final boolean enforceCap) {
+    consecutiveCursorFailures++;
+    int maxAttempts = sourceConfig.getInt(POLL_RETRY_MAX_ATTEMPTS_CONFIG);
+    if (enforceCap && maxAttempts > 0 && consecutiveCursorFailures >= maxAttempts) {
+      throw new ConnectException(
+          String.format(
+              "Failed to read from the change stream %d consecutive times, giving up. "
+                  + "See `%s`. %s",
+              consecutiveCursorFailures, POLL_RETRY_MAX_ATTEMPTS_CONFIG, safeErrorDetail(e)));
+    }
+  }
+
+  /** Waits, in short slices so that {@link #close()} is not delayed, after a cursor failure. */
+  private void backoffBeforeCursorRecreation() {
+    if (consecutiveCursorFailures == 0) {
+      return;
+    }
+    long remainingMs =
+        backoffMs(
+            consecutiveCursorFailures,
+            sourceConfig.getLong(POLL_RETRY_BACKOFF_MS_CONFIG),
+            sourceConfig.getLong(POLL_RETRY_BACKOFF_MAX_MS_CONFIG),
+            ThreadLocalRandom.current().nextDouble());
+    LOGGER.debug("Waiting {}ms before recreating the change stream cursor", remainingMs);
+    while (isRunning && remainingMs > 0) {
+      long sleepMs = Math.min(remainingMs, BACKOFF_SLEEP_SLICE_MS);
+      time.sleep(sleepMs);
+      remainingMs -= sleepMs;
+    }
+  }
+
+  /**
+   * Exponential backoff with equal jitter: the result is between half of and the full capped delay.
+   *
+   * @param failures the number of consecutive failures, at least 1
+   * @param randomFraction a random value in [0, 1)
+   */
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  static long backoffMs(
+      final int failures,
+      final long initialMs,
+      final long maxMs,
+      final double randomFraction) {
+    if (initialMs <= 0 || maxMs <= 0) {
+      return 0;
+    }
+    long delay = maxMs;
+    if (failures - 1 < Long.SIZE - 1 && initialMs <= maxMs >> (failures - 1)) {
+      delay = initialMs << (failures - 1);
+    }
+    long half = delay / 2;
+    return half + (long) (randomFraction * (delay - half));
   }
 
   private void closeCursor() {
