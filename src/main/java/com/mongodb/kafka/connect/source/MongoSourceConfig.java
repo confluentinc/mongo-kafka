@@ -358,7 +358,7 @@ public class MongoSourceConfig extends AbstractConfig {
           + "before returning an empty batch.";
   private static final long POLL_AWAIT_TIME_MS_DEFAULT = 5000;
   /** The largest value in use on managed connectors at the time of writing, so none is rejected. */
-  private static final long POLL_AWAIT_TIME_MS_MAX = 300000;
+  static final long POLL_AWAIT_TIME_MS_MAX = 300000;
   private static final String POLL_AWAIT_TIME_MS_DISPLAY = "Poll await time (ms)";
 
   public static final String POLL_RETRY_BACKOFF_MS_CONFIG = "poll.retry.backoff.ms";

@@ -37,15 +37,32 @@ public final class MongoClientHelper {
   private MongoClientHelper() {}
 
   /**
-   * Sets the socket read timeout unless the connection string already specifies {@code
-   * socketTimeoutMS}. Without a read timeout a hung connection blocks the calling thread forever.
+   * Bounds the socket read timeout, because without one a hung connection blocks the calling thread
+   * forever.
+   *
+   * <ul>
+   *   <li>If the connection string has no {@code socketTimeoutMS}, {@code readTimeoutMs} is used.
+   *   <li>If it is {@code 0} (no timeout) or above {@code maxReadTimeoutMs}, {@code
+   *       maxReadTimeoutMs} is used instead and a warning is logged.
+   *   <li>Otherwise the value from the connection string is kept.
+   * </ul>
    */
-  public static void applyReadTimeoutIfUnset(
+  public static void applyReadTimeout(
       final SocketSettings.Builder builder,
       final ConnectionString connectionString,
-      final int readTimeoutMs) {
-    if (connectionString.getSocketTimeout() == null) {
+      final int readTimeoutMs,
+      final int maxReadTimeoutMs) {
+    Integer socketTimeoutMs = connectionString.getSocketTimeout();
+    if (socketTimeoutMs == null) {
       builder.readTimeout(readTimeoutMs, TimeUnit.MILLISECONDS);
+    } else if (socketTimeoutMs == 0 || socketTimeoutMs > maxReadTimeoutMs) {
+      LOGGER.warn(
+          "`socketTimeoutMS={}` in the connection string {}, so a hung connection could block the"
+              + " task for too long. Using {}ms instead.",
+          socketTimeoutMs,
+          socketTimeoutMs == 0 ? "disables the read timeout" : "exceeds the maximum read timeout",
+          maxReadTimeoutMs);
+      builder.readTimeout(maxReadTimeoutMs, TimeUnit.MILLISECONDS);
     }
   }
 

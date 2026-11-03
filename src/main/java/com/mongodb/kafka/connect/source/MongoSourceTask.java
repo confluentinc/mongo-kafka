@@ -18,11 +18,12 @@ package com.mongodb.kafka.connect.source;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME_MS_CONFIG;
+import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME_MS_MAX;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PROVIDER_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceExceptions.safeErrorDetail;
 import static com.mongodb.kafka.connect.util.Assertions.assertNotNull;
 import static com.mongodb.kafka.connect.util.ConfigHelper.getMongoDriverInformation;
-import static com.mongodb.kafka.connect.util.MongoClientHelper.applyReadTimeoutIfUnset;
+import static com.mongodb.kafka.connect.util.MongoClientHelper.applyReadTimeout;
 import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
 import static com.mongodb.kafka.connect.util.SslConfigs.setupSsl;
 import static java.util.Collections.singletonMap;
@@ -97,9 +98,18 @@ public final class MongoSourceTask extends SourceTask {
    * a {@code getMore} that is slow but still working (a selective pipeline on a busy cluster, {@code
    * fullDocument=updateLookup}, resuming from an old token) can exceed it, and the driver then
    * resumes from the same token and repeats the same work. Raise {@code poll.await.time.ms} or set
-   * {@code socketTimeoutMS} in the connection string to allow more time.
+   * {@code socketTimeoutMS} in the connection string to allow more time, up to {@link
+   * #MAX_READ_TIMEOUT_MS}.
    */
   private static final int READ_TIMEOUT_MARGIN_MS = 15_000;
+
+  /**
+   * The largest read timeout the streaming client can have: what {@code poll.await.time.ms} at its
+   * maximum produces. A {@code socketTimeoutMS} of {@code 0} or above this in the connection string
+   * is replaced by it, so no configuration leaves a hung connection blocking the task.
+   */
+  private static final int MAX_READ_TIMEOUT_MS =
+      Math.toIntExact(POLL_AWAIT_TIME_MS_MAX) + READ_TIMEOUT_MARGIN_MS;
   private static final String CONNECTOR_TYPE = "source";
   public static final String ID_FIELD = "_id";
   public static final String DOCUMENT_KEY_FIELD = "documentKey";
@@ -190,11 +200,12 @@ public final class MongoSourceTask extends SourceTask {
     if (applyReadTimeout) {
       builder.applyToSocketSettings(
           socketBuilder ->
-              applyReadTimeoutIfUnset(
+              applyReadTimeout(
                   socketBuilder,
                   sourceConfig.getConnectionString(),
                   Math.toIntExact(sourceConfig.getLong(POLL_AWAIT_TIME_MS_CONFIG))
-                      + READ_TIMEOUT_MARGIN_MS));
+                      + READ_TIMEOUT_MARGIN_MS,
+                  MAX_READ_TIMEOUT_MS));
     }
 
     if (sourceConfig.getCustomCredentialProvider() != null) {

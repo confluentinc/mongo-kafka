@@ -25,14 +25,16 @@ import com.mongodb.MongoClientSettings;
 
 final class MongoClientHelperTest {
 
+  private static final int MAX_MS = 315000;
+
   private static long readTimeoutMs(final String uri, final int defaultMs) {
     MongoClientSettings settings =
         MongoClientSettings.builder()
             .applyConnectionString(new ConnectionString(uri))
             .applyToSocketSettings(
                 b ->
-                    MongoClientHelper.applyReadTimeoutIfUnset(
-                        b, new ConnectionString(uri), defaultMs))
+                    MongoClientHelper.applyReadTimeout(
+                        b, new ConnectionString(uri), defaultMs, MAX_MS))
             .build();
     return settings.getSocketSettings().getReadTimeout(MILLISECONDS);
   }
@@ -45,5 +47,24 @@ final class MongoClientHelperTest {
   @Test
   void keepsTheReadTimeoutFromTheUri() {
     assertEquals(1234, readTimeoutMs("mongodb://localhost/?socketTimeoutMS=1234", 20000));
+  }
+
+  @Test
+  void keepsAUriTimeoutAboveTheComputedOneUpToTheMaximum() {
+    assertEquals(
+        MAX_MS, readTimeoutMs("mongodb://localhost/?socketTimeoutMS=" + MAX_MS, 20000));
+    assertEquals(120000, readTimeoutMs("mongodb://localhost/?socketTimeoutMS=120000", 20000));
+  }
+
+  @Test
+  void replacesAUriTimeoutOfZeroWithTheMaximum() {
+    assertEquals(MAX_MS, readTimeoutMs("mongodb://localhost/?socketTimeoutMS=0", 20000));
+  }
+
+  @Test
+  void replacesAUriTimeoutAboveTheMaximumWithTheMaximum() {
+    assertEquals(
+        MAX_MS, readTimeoutMs("mongodb://localhost/?socketTimeoutMS=" + (MAX_MS + 1), 20000));
+    assertEquals(MAX_MS, readTimeoutMs("mongodb://localhost/?socketTimeoutMS=3600000", 20000));
   }
 }
