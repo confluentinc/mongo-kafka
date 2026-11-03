@@ -21,21 +21,33 @@ import java.util.Locale;
 import com.mongodb.WriteError;
 
 /**
- * The {@linkplain #getMessage() message} {@linkplain Formatter format} is {@code "v=2, code=%d"}.
+ * The {@linkplain #getMessage() message} {@linkplain Formatter format} is {@code "v=2, code=%d"},
+ * followed by {@code ", resent=true"} for a duplicate key error for a record that was resent after
+ * an attempt with an unknown outcome, since the duplicate may be the document that attempt wrote.
  * {@link WriteError#getMessage()}/{@link WriteError#getDetails()} are omitted since they embed
  * record field values (e.g. {@code dup key: {...}}). We may change the format again in the
- * future, in which case the version (marked with {@code v}) will be incremented.
+ * future, in which case the version (marked with {@code v}) will be incremented. Adding a key at
+ * the end does not change the version.
  */
 public final class WriteException extends NoStackTraceDlqException {
   private static final long serialVersionUID = 1L;
   private static final int MESSAGE_FORMAT_VERSION = 2;
 
   public WriteException(final WriteError error) {
+    this(error, false);
+  }
+
+  /**
+   * @param resent whether this is a duplicate key error for a record that was resent after an
+   *     attempt with an unknown outcome
+   */
+  public WriteException(final WriteError error, final boolean resent) {
     super(
         String.format(
             Locale.ENGLISH,
-            "v=%d, code=%d",
+            "v=%d, code=%d%s",
             MESSAGE_FORMAT_VERSION,
-            error.getCode()));
+            error.getCode(),
+            resent ? ", resent=true" : ""));
   }
 }
