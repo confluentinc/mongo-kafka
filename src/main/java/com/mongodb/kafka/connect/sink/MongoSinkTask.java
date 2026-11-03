@@ -51,7 +51,7 @@ import com.mongodb.kafka.connect.util.VisibleForTesting;
 public class MongoSinkTask extends SinkTask {
   static final Logger LOGGER = LoggerFactory.getLogger(MongoSinkTask.class);
   private static final String CONNECTOR_TYPE = "sink";
-  static final long DEFAULT_READ_TIMEOUT_MS = 60_000;
+  static final long DEFAULT_READ_TIMEOUT_MS = 90_000;
   private StartedMongoSinkTask startedTask;
 
   @Override
@@ -157,9 +157,11 @@ public class MongoSinkTask extends SinkTask {
   }
 
   /**
-   * The driver's default read timeout is infinite, so a half-open connection in the middle of a
-   * write blocks the task forever. A {@code socketTimeoutMS} set in the connection string is left
-   * as is.
+   * The driver's default read timeout is infinite, so a write whose reply never comes blocks the
+   * task forever. 90 s lets the driver's own retry of a timed-out write, which the server applies
+   * only once, cover a write that takes up to about 3 minutes, and keeps both attempts within the
+   * default 5 minute {@code max.poll.interval.ms}. A {@code socketTimeoutMS} set in the connection
+   * string is left as is.
    */
   @VisibleForTesting(otherwise = PRIVATE)
   static void setReadTimeout(final SocketSettings.Builder socket, final MongoSinkConfig sinkConfig) {

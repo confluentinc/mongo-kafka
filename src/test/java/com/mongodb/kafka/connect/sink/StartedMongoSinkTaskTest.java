@@ -50,6 +50,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -65,6 +66,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.internal.stubbing.defaultanswers.ReturnsSmartNulls;
+import org.mockito.stubbing.Answer;
 
 import org.bson.BsonDocument;
 import org.bson.BsonValue;
@@ -74,6 +76,7 @@ import com.mongodb.MongoCommandException;
 import com.mongodb.MongoConnectionPoolClearedException;
 import com.mongodb.MongoNamespace;
 import com.mongodb.MongoSocketReadTimeoutException;
+import com.mongodb.MongoTimeoutException;
 import com.mongodb.ServerAddress;
 import com.mongodb.bulk.BulkWriteError;
 import com.mongodb.bulk.BulkWriteResult;
@@ -603,13 +606,7 @@ final class StartedMongoSinkTaskTest {
 
   @Test
   void putRetryResendsAWriteWithAWriteConcernErrorWithTheSameId() {
-    assertRetryResendsTheSameId(
-        new MongoBulkWriteException(
-            BulkWriteResult.unacknowledged(),
-            emptyList(),
-            new WriteConcernError(64, "", "", BsonDocument.parse("{}")),
-            new ServerAddress(),
-            emptySet()));
+    assertRetryResendsTheSameId(writeConcernErrorException(64));
   }
 
   /** The failed write may have been applied, so resending it must not add a second document. */
@@ -643,6 +640,102 @@ final class StartedMongoSinkTaskTest {
         emptySet());
   }
 
+  private static MongoBulkWriteException writeConcernErrorException(final int code) {
+    return new MongoBulkWriteException(
+        BulkWriteResult.unacknowledged(),
+        emptyList(),
+        new WriteConcernError(code, "", "", BsonDocument.parse("{}")),
+        new ServerAddress(),
+        emptySet());
+  }
+
+  @Test
+  void putReportsADuplicateKeyForARecordResentAfterATimeoutAsResent() {
+    assertReportedAfterARetry(
+        new MongoSocketReadTimeoutException(
+            "read timed out", new ServerAddress(), new RuntimeException()),
+        "v=2, code=11000, resent=true");
+  }
+
+  @Test
+  void putReportsADuplicateKeyForARecordResentAfterAWriteConcernErrorAsResent() {
+    assertReportedAfterARetry(writeConcernErrorException(64), "v=2, code=11000, resent=true");
+  }
+
+  @Test
+  void putDoesNotReportADuplicateKeyAsResentIfTheFailedAttemptDidNotWriteTheRecord() {
+    assertReportedAfterARetry(bulkWriteExceptionAt(0, 16500), "v=2, code=11000");
+  }
+
+  @Test
+  void putDoesNotReportADuplicateKeyAsResentIfTheFailedAttemptGotNoConnection() {
+    assertReportedAfterARetry(new MongoTimeoutException("timed out"), "v=2, code=11000");
+  }
+
+  /** The first attempt fails with {@code e}, and the resend with a duplicate key error. */
+  private void assertReportedAfterARetry(final RuntimeException e, final String expectedMessage) {
+    properties.put(MongoSinkTopicConfig.ERRORS_TOLERANCE_CONFIG, ErrorTolerance.ALL.value());
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(e)
+                .thenThrow(bulkWriteException(11000)));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    task.put(records);
+    assertEquals(1, errorReporter.reported().size());
+    assertEquals(expectedMessage, errorReporter.reported().get(0).exception().getMessage());
+  }
+
+  @Test
+  void putTolerateNoneSaysADuplicateKeyMayComeFromTheAttemptBeforeTheResend() {
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(
+                    new MongoSocketReadTimeoutException(
+                        "read timed out", new ServerAddress(), new RuntimeException()))
+                .thenThrow(bulkWriteException(11000)));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    DataException thrown = assertThrows(DataException.class, () -> task.put(records));
+    assertTrue(
+        thrown
+            .getMessage()
+            .endsWith(
+                ". 1 duplicate key error(s) for records resent after an attempt with an unknown"
+                    + " outcome, which may have written them"),
+        thrown::getMessage);
+  }
+
+  @Test
+  void putForgetsWhichRecordsMayHaveBeenWrittenAfterASuccessfulPut() {
+    properties.put(MongoSinkTopicConfig.ERRORS_TOLERANCE_CONFIG, ErrorTolerance.ALL.value());
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(
+                    new MongoSocketReadTimeoutException(
+                        "read timed out", new ServerAddress(), new RuntimeException()))
+                .thenReturn(BulkWriteResult.unacknowledged())
+                .thenThrow(bulkWriteException(11000)));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    task.put(records);
+    task.put(records);
+    assertEquals(1, errorReporter.reported().size());
+    assertEquals("v=2, code=11000", errorReporter.reported().get(0).exception().getMessage());
+  }
+
   @Test
   void putRetriesTransientErrorsThenFallsBackToTheConfiguredTolerance() {
     MongoSinkConfig config = new MongoSinkConfig(properties);
@@ -663,6 +756,54 @@ final class StartedMongoSinkTaskTest {
             .allMatch(t -> t >= 1 && t <= StartedMongoSinkTask.RETRY_BACKOFF_CAP_MS),
         timeouts::toString);
     assertThrows(DataException.class, () -> task.put(records));
+  }
+
+  @Test
+  void putStopsRetryingFiveMinutesAfterTheFirstFailedAttemptStarted() {
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    AtomicLong clockMs = new AtomicLong();
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenAnswer(timesOutAfterTheDriverRetry(clockMs)));
+    List<Long> timeouts = new ArrayList<>();
+    task =
+        new StartedMongoSinkTask(
+            config, client.mongoClient(), errorReporter, timeouts::add, clockMs::get);
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    assertThrows(DataException.class, () -> task.put(records));
+    assertEquals(1, timeouts.size());
+  }
+
+  @Test
+  void putRetryDurationStartsOverAfterASuccessfulPut() {
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    AtomicLong clockMs = new AtomicLong();
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenAnswer(timesOutAfterTheDriverRetry(clockMs))
+                .thenReturn(BulkWriteResult.unacknowledged())
+                .thenAnswer(timesOutAfterTheDriverRetry(clockMs)));
+    task =
+        new StartedMongoSinkTask(
+            config, client.mongoClient(), errorReporter, timeout -> {}, clockMs::get);
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    assertThrows(RetriableException.class, () -> task.put(records));
+    task.put(records);
+    assertThrows(RetriableException.class, () -> task.put(records));
+  }
+
+  /** A write that times out, after the driver's own retry timed out too. */
+  private static Answer<BulkWriteResult> timesOutAfterTheDriverRetry(final AtomicLong clockMs) {
+    return invocation -> {
+      clockMs.addAndGet(2 * MongoSinkTask.DEFAULT_READ_TIMEOUT_MS);
+      throw new MongoSocketReadTimeoutException(
+          "read timed out", new ServerAddress(), new RuntimeException());
+    };
   }
 
   @Test
