@@ -66,8 +66,8 @@ public class MongoSinkTask extends SinkTask {
       new CommandListener() {
         @Override
         public void commandFailed(final CommandFailedEvent event) {
-          if (WRITE_COMMANDS.contains(event.getCommandName())) {
-            LOGGER.info(
+          if (LOGGER.isDebugEnabled() && WRITE_COMMANDS.contains(event.getCommandName())) {
+            LOGGER.debug(
                 "MongoDB {} attempt failed after {} ms ({})",
                 event.getCommandName(),
                 event.getElapsedTime(TimeUnit.MILLISECONDS),
