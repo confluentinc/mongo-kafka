@@ -24,8 +24,11 @@ import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
 import static com.mongodb.kafka.connect.util.SslConfigs.setupSsl;
 import static com.mongodb.kafka.connect.util.VisibleForTesting.AccessModifier.PRIVATE;
 
+import static java.util.Arrays.asList;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -43,6 +46,8 @@ import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.connection.SocketSettings;
+import com.mongodb.event.CommandFailedEvent;
+import com.mongodb.event.CommandListener;
 
 import com.mongodb.kafka.connect.Versions;
 import com.mongodb.kafka.connect.sink.dlq.ErrorReporter;
@@ -52,6 +57,24 @@ public class MongoSinkTask extends SinkTask {
   static final Logger LOGGER = LoggerFactory.getLogger(MongoSinkTask.class);
   private static final String CONNECTOR_TYPE = "sink";
   static final long DEFAULT_READ_TIMEOUT_MS = 90_000;
+  private static final List<String> WRITE_COMMANDS = asList("insert", "update", "delete");
+  /**
+   * Logs each failed write attempt, also one that the driver's own retry then fixes, which the task
+   * does not see otherwise. Logs the error type and code, never the command, which holds records.
+   */
+  private static final CommandListener FAILED_WRITE_LOGGER =
+      new CommandListener() {
+        @Override
+        public void commandFailed(final CommandFailedEvent event) {
+          if (WRITE_COMMANDS.contains(event.getCommandName())) {
+            LOGGER.info(
+                "MongoDB {} attempt failed after {} ms ({})",
+                event.getCommandName(),
+                event.getElapsedTime(TimeUnit.MILLISECONDS),
+                StartedMongoSinkTask.errorSummary(event.getThrowable()));
+          }
+        }
+      };
   private StartedMongoSinkTask startedTask;
 
   @Override
@@ -184,7 +207,8 @@ public class MongoSinkTask extends SinkTask {
         MongoClientSettings.builder()
             .applyConnectionString(sinkConfig.getConnectionString())
             .applyToSocketSettings(socket -> setReadTimeout(socket, sinkConfig))
-            .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sinkConfig));
+            .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sinkConfig))
+            .addCommandListener(FAILED_WRITE_LOGGER);
     if (sinkConfig.getConnectionString().getApplicationName() == null) {
       builder.applicationName(applicationName(sinkConfig.getOriginals()));
     }

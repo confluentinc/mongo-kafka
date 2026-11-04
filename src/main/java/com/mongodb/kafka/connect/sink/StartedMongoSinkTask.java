@@ -113,6 +113,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
   private final Set<MongoNamespace> checkedTimeseriesNamespaces;
   private int consecutiveRetries;
   private long firstFailedAttemptStartMs;
+  private boolean retriesRanOut;
   /**
    * Records of the current {@code put()} that are already written or reported to the DLQ. Kept
    * across a {@link RetriableException} so the redelivered {@code put()} skips them, and cleared
@@ -231,7 +232,14 @@ final class StartedMongoSinkTask implements AutoCloseable {
         for (List<MongoProcessedSinkRecordData> batch : batches) {
           bulkWriteBatch(batch);
         }
+        if (consecutiveRetries > 0 && !retriesRanOut) {
+          LOGGER.info(
+              "Writing to MongoDB recovered after {} retries in {} ms",
+              consecutiveRetries,
+              clockMs.getAsLong() - firstFailedAttemptStartMs);
+        }
         consecutiveRetries = 0;
+        retriesRanOut = false;
         handledRecords.clear();
         processedRecords.clear();
         possiblyWrittenRecords.clear();
@@ -385,6 +393,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
           errorSummary(e),
           consecutiveRetries,
           retryingForMs);
+      retriesRanOut = true;
       return;
     }
     consecutiveRetries++;
@@ -430,7 +439,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
     return false;
   }
 
-  private static String errorSummary(final RuntimeException e) {
+  static String errorSummary(final Throwable e) {
     if (e instanceof MongoBulkWriteException) {
       MongoBulkWriteException bulkWriteException = (MongoBulkWriteException) e;
       return "write error code(s) "
