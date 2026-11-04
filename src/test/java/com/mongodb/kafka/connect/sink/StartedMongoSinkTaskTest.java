@@ -60,6 +60,7 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.apache.log4j.Level;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -795,6 +796,66 @@ final class StartedMongoSinkTaskTest {
     assertThrows(RetriableException.class, () -> task.put(records));
     task.put(records);
     assertThrows(RetriableException.class, () -> task.put(records));
+  }
+
+  @Test
+  void putLogsOnceHowLongTheRetriesTookWhenWritingRecovers() {
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    AtomicLong clockMs = new AtomicLong();
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(commandException(16500))
+                .thenThrow(commandException(16500))
+                .thenReturn(BulkWriteResult.unacknowledged()));
+    List<Long> backoffs = new ArrayList<>();
+    task =
+        new StartedMongoSinkTask(
+            config,
+            client.mongoClient(),
+            errorReporter,
+            backoffMs -> {
+              backoffs.add(backoffMs);
+              clockMs.addAndGet(backoffMs);
+            },
+            clockMs::get);
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    try (CapturedLogs logs = new CapturedLogs()) {
+      assertThrows(RetriableException.class, () -> task.put(records));
+      assertThrows(RetriableException.class, () -> task.put(records));
+      task.put(records);
+      long backoffMs = backoffs.get(0) + backoffs.get(1);
+      assertEquals(
+          singletonList(
+              String.format(
+                  "Writing to MongoDB recovered after 2 retries in %d ms, %d ms of it in backoff"
+                      + " (first error: MongoCommandException code 16500)",
+                  backoffMs,
+                  backoffMs)),
+          logs.at(Level.INFO));
+    }
+  }
+
+  @Test
+  void putDoesNotLogARecoveryWhenTheRetriesRanOut() {
+    properties.put(MongoSinkTopicConfig.ERRORS_TOLERANCE_CONFIG, ErrorTolerance.ALL.value());
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(commandException(16500)));
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeout -> {});
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    try (CapturedLogs logs = new CapturedLogs()) {
+      for (int i = 0; i < StartedMongoSinkTask.MAX_CONSECUTIVE_RETRIES; i++) {
+        assertThrows(RetriableException.class, () -> task.put(records));
+      }
+      task.put(records);
+      assertEquals(1, errorReporter.reported().size());
+      assertTrue(logs.at(Level.INFO).isEmpty(), logs.at(Level.INFO)::toString);
+    }
   }
 
   /** A write that times out, after the driver's own retry timed out too. */

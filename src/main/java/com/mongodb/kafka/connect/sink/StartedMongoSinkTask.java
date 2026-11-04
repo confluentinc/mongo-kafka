@@ -113,6 +113,9 @@ final class StartedMongoSinkTask implements AutoCloseable {
   private final Set<MongoNamespace> checkedTimeseriesNamespaces;
   private int consecutiveRetries;
   private long firstFailedAttemptStartMs;
+  private long retryBackoffMs;
+  private String firstRetryError = "";
+  private boolean retriesRanOut;
   /**
    * Records of the current {@code put()} that are already written or reported to the DLQ. Kept
    * across a {@link RetriableException} so the redelivered {@code put()} skips them, and cleared
@@ -231,7 +234,17 @@ final class StartedMongoSinkTask implements AutoCloseable {
         for (List<MongoProcessedSinkRecordData> batch : batches) {
           bulkWriteBatch(batch);
         }
+        if (consecutiveRetries > 0 && !retriesRanOut) {
+          LOGGER.info(
+              "Writing to MongoDB recovered after {} retries in {} ms, {} ms of it in backoff"
+                  + " (first error: {})",
+              consecutiveRetries,
+              clockMs.getAsLong() - firstFailedAttemptStartMs,
+              retryBackoffMs,
+              firstRetryError);
+        }
         consecutiveRetries = 0;
+        retriesRanOut = false;
         handledRecords.clear();
         processedRecords.clear();
         possiblyWrittenRecords.clear();
@@ -370,6 +383,9 @@ final class StartedMongoSinkTask implements AutoCloseable {
    * with the write models of the failed attempt, see {@link #processedRecords}. This matters
    * because with the default {@code BsonOidStrategy} a record without an {@code _id} gets a new one
    * every time it is processed, so processing it again would duplicate the document.
+   *
+   * <p>Each retry is logged, and so is running out of retries. When a {@code put()} completes after
+   * retries that did not run out, it logs once how many there were and how long they took.
    */
   private void retryIfTransient(final RuntimeException e, final long attemptStartMs) {
     if (!isTransient(e)) {
@@ -377,6 +393,8 @@ final class StartedMongoSinkTask implements AutoCloseable {
     }
     if (consecutiveRetries == 0) {
       firstFailedAttemptStartMs = attemptStartMs;
+      firstRetryError = errorSummary(e);
+      retryBackoffMs = 0;
     }
     long retryingForMs = clockMs.getAsLong() - firstFailedAttemptStartMs;
     if (consecutiveRetries >= MAX_CONSECUTIVE_RETRIES || retryingForMs >= MAX_RETRY_DURATION_MS) {
@@ -385,6 +403,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
           errorSummary(e),
           consecutiveRetries,
           retryingForMs);
+      retriesRanOut = true;
       return;
     }
     consecutiveRetries++;
@@ -398,6 +417,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
         consecutiveRetries,
         MAX_CONSECUTIVE_RETRIES,
         backoffMs);
+    retryBackoffMs += backoffMs;
     retryTimeout.accept(backoffMs);
     // Do not chain the driver exception: its message can carry record-derived content.
     throw new RetriableException("Transient error writing to MongoDB: " + errorSummary(e));
@@ -430,7 +450,8 @@ final class StartedMongoSinkTask implements AutoCloseable {
     return false;
   }
 
-  private static String errorSummary(final RuntimeException e) {
+  /** The type and codes of an error, never its message, which can carry record-derived content. */
+  static String errorSummary(final Throwable e) {
     if (e instanceof MongoBulkWriteException) {
       MongoBulkWriteException bulkWriteException = (MongoBulkWriteException) e;
       return "write error code(s) "

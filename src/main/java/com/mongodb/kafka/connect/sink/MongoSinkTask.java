@@ -184,7 +184,8 @@ public class MongoSinkTask extends SinkTask {
         MongoClientSettings.builder()
             .applyConnectionString(sinkConfig.getConnectionString())
             .applyToSocketSettings(socket -> setReadTimeout(socket, sinkConfig))
-            .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sinkConfig));
+            .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sinkConfig))
+            .addCommandListener(new DriverRetryListener());
     if (sinkConfig.getConnectionString().getApplicationName() == null) {
       builder.applicationName(applicationName(sinkConfig.getOriginals()));
     }
