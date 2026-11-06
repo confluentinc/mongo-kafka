@@ -19,6 +19,7 @@
 package com.mongodb.kafka.connect.sink;
 
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.CONNECTION_URI_CONFIG;
+import static com.mongodb.kafka.connect.sink.MongoSinkConfig.RETRY_MAX_ATTEMPTS_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.TOPICS_REGEX_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.TOPIC_OVERRIDE_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.createOverrideKey;
@@ -938,6 +939,20 @@ class MongoSinkConfigTest {
         () -> assertEquals("", createSinkConfig().getString(TIMESERIES_GRANULARITY_CONFIG)),
         () -> assertInvalid(TIMESERIES_GRANULARITY_CONFIG, "invalid granularity"),
         () -> assertInvalid(TIMESERIES_TIMEFIELD_AUTO_CONVERSION_DATE_FORMAT_CONFIG, "J"));
+  }
+
+  @Test
+  @DisplayName("test retry configuration")
+  void testRetryConfigurations() {
+    assertAll(
+        "Retry configuration",
+        () -> assertEquals(10, createSinkConfig().getInt(RETRY_MAX_ATTEMPTS_CONFIG)),
+        () ->
+            assertEquals(
+                3,
+                createSinkConfig(RETRY_MAX_ATTEMPTS_CONFIG, "3").getInt(RETRY_MAX_ATTEMPTS_CONFIG)),
+        () -> assertInvalid(RETRY_MAX_ATTEMPTS_CONFIG, "0"),
+        () -> assertInvalid(RETRY_MAX_ATTEMPTS_CONFIG, "-1"));
   }
 
   private Exception assertInvalid(final String key, final String value) {

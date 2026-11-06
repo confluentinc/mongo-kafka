@@ -15,6 +15,8 @@
  */
 package com.mongodb.kafka.connect.sink;
 
+import static com.mongodb.kafka.connect.sink.MongoSinkConfig.RETRY_MAX_ATTEMPTS_CONFIG;
+import static com.mongodb.kafka.connect.sink.MongoSinkConfig.RETRY_MAX_ATTEMPTS_DEFAULT;
 import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.BULK_WRITE_ORDERED_DEFAULT;
 import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.COLLECTION_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.DATABASE_CONFIG;
@@ -747,14 +749,33 @@ final class StartedMongoSinkTaskTest {
     List<Long> timeouts = new ArrayList<>();
     task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeouts::add);
     List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
-    for (int i = 0; i < StartedMongoSinkTask.MAX_CONSECUTIVE_RETRIES; i++) {
+    for (int i = 0; i < RETRY_MAX_ATTEMPTS_DEFAULT; i++) {
       assertThrows(RetriableException.class, () -> task.put(records));
     }
-    assertEquals(StartedMongoSinkTask.MAX_CONSECUTIVE_RETRIES, timeouts.size());
+    assertEquals(RETRY_MAX_ATTEMPTS_DEFAULT, timeouts.size());
     assertTrue(
         timeouts.stream()
             .allMatch(t -> t >= 1 && t <= StartedMongoSinkTask.RETRY_BACKOFF_CAP_MS),
         timeouts::toString);
+    assertThrows(DataException.class, () -> task.put(records));
+  }
+
+  @Test
+  void putRetriesAsManyTimesAsRetryMaxAttemptsAllows() {
+    properties.put(RETRY_MAX_ATTEMPTS_CONFIG, "3");
+    MongoSinkConfig config = new MongoSinkConfig(properties);
+    client.configureCapturing(
+        DEFAULT_NAMESPACE,
+        collection ->
+            when(collection.bulkWrite(anyList(), any(BulkWriteOptions.class)))
+                .thenThrow(commandException(16500)));
+    List<Long> timeouts = new ArrayList<>();
+    task = new StartedMongoSinkTask(config, client.mongoClient(), errorReporter, timeouts::add);
+    List<SinkRecord> records = singletonList(Records.simpleValid(TEST_TOPIC, 0));
+    for (int i = 0; i < 3; i++) {
+      assertThrows(RetriableException.class, () -> task.put(records));
+    }
+    assertEquals(3, timeouts.size());
     assertThrows(DataException.class, () -> task.put(records));
   }
 

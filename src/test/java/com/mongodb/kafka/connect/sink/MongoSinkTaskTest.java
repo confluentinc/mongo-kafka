@@ -43,6 +43,27 @@ final class MongoSinkTaskTest {
   }
 
   @Test
+  void readTimeoutKeepsTheConnectionStringValueUpToTheMaximum() {
+    assertEquals(
+        MongoSinkTask.MAX_READ_TIMEOUT_MS,
+        readTimeoutMs("mongodb://localhost/?socketTimeoutMS=" + MongoSinkTask.MAX_READ_TIMEOUT_MS));
+  }
+
+  @Test
+  void readTimeoutReplacesZeroWithTheMaximum() {
+    assertEquals(
+        MongoSinkTask.MAX_READ_TIMEOUT_MS, readTimeoutMs("mongodb://localhost/?socketTimeoutMS=0"));
+  }
+
+  @Test
+  void readTimeoutReplacesAValueAboveTheMaximumWithTheMaximum() {
+    assertEquals(
+        MongoSinkTask.MAX_READ_TIMEOUT_MS,
+        readTimeoutMs(
+            "mongodb://localhost/?socketTimeoutMS=" + (MongoSinkTask.MAX_READ_TIMEOUT_MS + 1)));
+  }
+
+  @Test
   void applicationNameIncludesTheConnectorName() {
     Map<String, String> props = new HashMap<>();
     props.put("name", "lcc-abc123");

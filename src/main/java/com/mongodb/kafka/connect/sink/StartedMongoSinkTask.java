@@ -17,6 +17,7 @@
  */
 package com.mongodb.kafka.connect.sink;
 
+import static com.mongodb.kafka.connect.sink.MongoSinkConfig.RETRY_MAX_ATTEMPTS_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkTask.LOGGER;
 import static com.mongodb.kafka.connect.sink.MongoSinkTopicConfig.BULK_WRITE_ORDERED_CONFIG;
 import static com.mongodb.kafka.connect.util.TimeseriesValidation.validateCollection;
@@ -95,7 +96,6 @@ final class StartedMongoSinkTask implements AutoCloseable {
               ));
 
   private static final String RETRYABLE_WRITE_ERROR_LABEL = "RetryableWriteError";
-  static final int MAX_CONSECUTIVE_RETRIES = 10;
   static final long RETRY_BACKOFF_BASE_MS = 1_000;
   static final long RETRY_BACKOFF_CAP_MS = 60_000;
   /**
@@ -110,6 +110,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
   private final ErrorReporter errorReporter;
   private final LongConsumer retryTimeout;
   private final LongSupplier clockMs;
+  private final int retryMaxAttempts;
   private final Set<MongoNamespace> checkedTimeseriesNamespaces;
   private int consecutiveRetries;
   private long firstFailedAttemptStartMs;
@@ -181,6 +182,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
         };
     this.retryTimeout = retryTimeout;
     this.clockMs = clockMs;
+    retryMaxAttempts = sinkConfig.getInt(RETRY_MAX_ATTEMPTS_CONFIG);
     checkedTimeseriesNamespaces = new HashSet<>();
     statistics = new SinkTaskStatistics(getMBeanName());
     statistics.register();
@@ -369,9 +371,8 @@ final class StartedMongoSinkTask implements AutoCloseable {
   /**
    * Throws a {@link RetriableException} for a transient error, so the framework redelivers the
    * same records after a capped exponential backoff with full jitter instead of failing the task
-   * or dead-lettering them. Once {@link #MAX_CONSECUTIVE_RETRIES} retries in a row have failed, or
-   * they have gone on for {@link #MAX_RETRY_DURATION_MS}, returns, and the error is handled as
-   * before.
+   * or dead-lettering them. Once {@code retry.max.attempts} retries in a row have failed, or they
+   * have gone on for {@link #MAX_RETRY_DURATION_MS}, returns, and the error is handled as before.
    *
    * <p>The framework redelivers the whole {@code put()}; records that were already written or
    * reported to the DLQ are skipped then, see {@link #handledRecords}, and the rest are written
@@ -387,7 +388,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
       firstFailedAttemptStartMs = attemptStartMs;
     }
     long retryingForMs = clockMs.getAsLong() - firstFailedAttemptStartMs;
-    if (consecutiveRetries >= MAX_CONSECUTIVE_RETRIES || retryingForMs >= MAX_RETRY_DURATION_MS) {
+    if (consecutiveRetries >= retryMaxAttempts || retryingForMs >= MAX_RETRY_DURATION_MS) {
       LOGGER.warn(
           "Transient error writing to MongoDB ({}), not retrying after {} retries in {} ms",
           errorSummary(e),
@@ -405,7 +406,7 @@ final class StartedMongoSinkTask implements AutoCloseable {
         "Transient error writing to MongoDB ({}), retry {} of {} in {} ms",
         errorSummary(e),
         consecutiveRetries,
-        MAX_CONSECUTIVE_RETRIES,
+        retryMaxAttempts,
         backoffMs);
     retryTimeout.accept(backoffMs);
     // Do not chain the driver exception: its message can carry record-derived content.
