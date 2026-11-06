@@ -117,6 +117,14 @@ public class MongoSinkConfig extends AbstractConfig {
 
   static final String PROVIDER_CONFIG = "provider";
 
+  public static final String RETRY_MAX_ATTEMPTS_CONFIG = "retry.max.attempts";
+  private static final String RETRY_MAX_ATTEMPTS_DOC =
+      "The maximum number of consecutive retries of a write that failed with a transient error, "
+          + "for example a timeout, a failover or throttling. The count resets after a successful "
+          + "write. Retries also stop 5 minutes after the first failed attempt started. Then the "
+          + "error is handled according to `errors.tolerance`.";
+  static final int RETRY_MAX_ATTEMPTS_DEFAULT = 10;
+
   private static final List<String> INVISIBLE_CONFIGS = singletonList(TOPIC_OVERRIDE_CONFIG);
 
   private Map<String, String> originals;
@@ -370,6 +378,14 @@ public class MongoSinkConfig extends AbstractConfig {
       REGEX_TIMEOUT_MS_DISPLAY);
 
     configDef.defineInternal(PROVIDER_CONFIG, Type.STRING, "", Importance.LOW);
+    // Internal, so it is not documented for users, but it can still be set per connector.
+    configDef.defineInternal(
+        RETRY_MAX_ATTEMPTS_CONFIG,
+        Type.INT,
+        RETRY_MAX_ATTEMPTS_DEFAULT,
+        ConfigDef.Range.atLeast(1),
+        Importance.LOW,
+        RETRY_MAX_ATTEMPTS_DOC);
 
     MongoSinkTopicConfig.BASE_CONFIG.configKeys().values().forEach(configDef::define);
     return configDef;
