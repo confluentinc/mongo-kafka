@@ -440,9 +440,10 @@ class MongoSourceConfigTest {
         () -> assertEquals(30000, createSourceConfig().getLong("poll.retry.backoff.max.ms")),
         () -> assertEquals(20, createSourceConfig().getInt("poll.retry.max.attempts")),
         () -> assertEquals(0, createSourceConfig("poll.retry.backoff.ms", "0").getLong("poll.retry.backoff.ms")),
-        () -> assertEquals(0, createSourceConfig("poll.retry.max.attempts", "0").getInt("poll.retry.max.attempts")),
+        () -> assertEquals(1, createSourceConfig("poll.retry.max.attempts", "1").getInt("poll.retry.max.attempts")),
         () -> assertInvalid("poll.retry.backoff.ms", "-1"),
         () -> assertInvalid("poll.retry.backoff.max.ms", "-1"),
+        () -> assertInvalid("poll.retry.max.attempts", "0"),
         () -> assertInvalid("poll.retry.max.attempts", "-1"));
   }
 

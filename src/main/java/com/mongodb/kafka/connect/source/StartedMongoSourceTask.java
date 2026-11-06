@@ -673,7 +673,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
   private void recordCursorFailure(final MongoException e, final boolean enforceCap) {
     consecutiveCursorFailures++;
     int maxAttempts = sourceConfig.getInt(POLL_RETRY_MAX_ATTEMPTS_CONFIG);
-    if (enforceCap && maxAttempts > 0 && consecutiveCursorFailures >= maxAttempts) {
+    if (enforceCap && consecutiveCursorFailures >= maxAttempts) {
       throw new ConnectException(
           String.format(
               "Failed to read from the change stream %d consecutive times, giving up. "
