@@ -20,12 +20,18 @@ package com.mongodb.kafka.connect.sink;
 
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.PROVIDER_CONFIG;
 import static com.mongodb.kafka.connect.util.ConfigHelper.getMongoDriverInformation;
+import static com.mongodb.kafka.connect.util.MongoClientHelper.applyReadTimeout;
 import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
 import static com.mongodb.kafka.connect.util.SslConfigs.setupSsl;
 import static com.mongodb.kafka.connect.util.VisibleForTesting.AccessModifier.PRIVATE;
 
+import static java.util.Arrays.asList;
+
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -40,6 +46,9 @@ import org.slf4j.LoggerFactory;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.connection.SocketSettings;
+import com.mongodb.event.CommandFailedEvent;
+import com.mongodb.event.CommandListener;
 
 import com.mongodb.kafka.connect.Versions;
 import com.mongodb.kafka.connect.sink.dlq.ErrorReporter;
@@ -48,6 +57,26 @@ import com.mongodb.kafka.connect.util.VisibleForTesting;
 public class MongoSinkTask extends SinkTask {
   static final Logger LOGGER = LoggerFactory.getLogger(MongoSinkTask.class);
   private static final String CONNECTOR_TYPE = "sink";
+  static final long DEFAULT_READ_TIMEOUT_MS = 90_000;
+  static final int MAX_READ_TIMEOUT_MS = 120_000;
+  private static final List<String> WRITE_COMMANDS = asList("insert", "update", "delete");
+  /**
+   * Logs each failed write attempt, also one that the driver's own retry then fixes, which the task
+   * does not see otherwise. Logs the error type and code, never the command, which holds records.
+   */
+  private static final CommandListener FAILED_WRITE_LOGGER =
+      new CommandListener() {
+        @Override
+        public void commandFailed(final CommandFailedEvent event) {
+          if (LOGGER.isDebugEnabled() && WRITE_COMMANDS.contains(event.getCommandName())) {
+            LOGGER.debug(
+                "MongoDB {} attempt failed after {} ms ({})",
+                event.getCommandName(),
+                event.getElapsedTime(TimeUnit.MILLISECONDS),
+                StartedMongoSinkTask.errorSummary(event.getThrowable()));
+          }
+        }
+      };
   private StartedMongoSinkTask startedTask;
 
   @Override
@@ -68,7 +97,9 @@ public class MongoSinkTask extends SinkTask {
     try {
       MongoSinkConfig sinkConfig = new MongoSinkConfig(props);
       client = createMongoClient(sinkConfig);
-      startedTask = new StartedMongoSinkTask(sinkConfig, client, createErrorReporter());
+      startedTask =
+          new StartedMongoSinkTask(
+              sinkConfig, client, createErrorReporter(), timeoutMs -> context.timeout(timeoutMs));
     } catch (RuntimeException taskStartingException) {
       //noinspection EmptyTryBlock
       try (MongoClient autoCloseableClient = client) {
@@ -150,11 +181,45 @@ public class MongoSinkTask extends SinkTask {
     return (record, e) -> {};
   }
 
+  /**
+   * The driver's default read timeout is infinite, so a write whose reply never comes blocks the
+   * task forever. 90 s lets the driver's own retry of a timed-out write, which the server applies
+   * only once, cover a write that takes up to about 3 minutes, and keeps both attempts within the
+   * default 5 minute {@code max.poll.interval.ms}.
+   *
+   * <p>A {@code socketTimeoutMS} set in the connection string is kept up to {@link
+   * #MAX_READ_TIMEOUT_MS}; {@code 0} (no timeout) or a larger value is replaced by it. Two attempts
+   * of 120 s, plus up to 30 s of server selection between them, still fit in those 5 minutes and in
+   * the task's own retry limit, so the task can still resend such a write once.
+   */
+  @VisibleForTesting(otherwise = PRIVATE)
+  static void setReadTimeout(final SocketSettings.Builder socket, final MongoSinkConfig sinkConfig) {
+    applyReadTimeout(
+        socket,
+        sinkConfig.getConnectionString(),
+        (int) DEFAULT_READ_TIMEOUT_MS,
+        MAX_READ_TIMEOUT_MS);
+  }
+
+  /** Lets the customer attribute the load in Atlas to this connector. */
+  @VisibleForTesting(otherwise = PRIVATE)
+  static String applicationName(final Map<String, String> props) {
+    String base = "confluent-mongodb-sink/" + Versions.VERSION;
+    String name = base + "/" + props.getOrDefault("name", "unknown");
+    // The driver rejects application names over 128 bytes.
+    return name.getBytes(StandardCharsets.UTF_8).length <= 128 ? name : base;
+  }
+
   private static MongoClient createMongoClient(final MongoSinkConfig sinkConfig) {
     MongoClientSettings.Builder builder =
         MongoClientSettings.builder()
             .applyConnectionString(sinkConfig.getConnectionString())
-            .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sinkConfig));
+            .applyToSocketSettings(socket -> setReadTimeout(socket, sinkConfig))
+            .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sinkConfig))
+            .addCommandListener(FAILED_WRITE_LOGGER);
+    if (sinkConfig.getConnectionString().getApplicationName() == null) {
+      builder.applicationName(applicationName(sinkConfig.getOriginals()));
+    }
     if (sinkConfig.getCustomCredentialProvider() != null) {
       builder.credential(
           sinkConfig.getCustomCredentialProvider().getCustomCredential(sinkConfig.getOriginals()));

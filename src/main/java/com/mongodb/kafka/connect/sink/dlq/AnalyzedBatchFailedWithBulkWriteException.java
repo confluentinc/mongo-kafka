@@ -24,6 +24,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntPredicate;
 import java.util.stream.IntStream;
 
 import org.apache.kafka.connect.sink.SinkRecord;
@@ -55,12 +56,17 @@ public final class AnalyzedBatchFailedWithBulkWriteException {
   @Nullable private final WriteConcernException writeConcernException;
   private final WriteSkippedException writeSkippedException = new WriteSkippedException();
 
+  /**
+   * @param resent tells by its index whether a write error is a duplicate key error for a record
+   *     that was resent after an attempt that may have written it, see {@link WriteException}
+   */
   public AnalyzedBatchFailedWithBulkWriteException(
       final List<SinkRecord> batch,
       final boolean ordered,
       final MongoBulkWriteException e,
       final ErrorReporter errorReporter,
-      final Logger logger) {
+      final Logger logger,
+      final IntPredicate resent) {
     this.batch = batch;
     this.e = e;
     this.errorReporter = errorReporter;
@@ -76,10 +82,10 @@ public final class AnalyzedBatchFailedWithBulkWriteException {
     }
     writeConcernException =
         writeConcernError == null ? null : new WriteConcernException(writeConcernError);
-    analyze(ordered);
+    analyze(ordered, resent);
   }
 
-  private void analyze(final boolean ordered) {
+  private void analyze(final boolean ordered, final IntPredicate resent) {
     List<BulkWriteError> writeErrors = e.getWriteErrors();
     WriteConcernError writeConcernError = e.getWriteConcernError();
     assertTrue(!writeErrors.isEmpty() || writeConcernError != null);
@@ -95,7 +101,8 @@ public final class AnalyzedBatchFailedWithBulkWriteException {
           recordsFailedWithWriteError.put(
               writeErrorIdx,
               new AbstractMap.SimpleImmutableEntry<>(
-                  batch.get(writeErrorIdx), new WriteException(writeError)));
+                  batch.get(writeErrorIdx),
+                  new WriteException(writeError, resent.test(writeErrorIdx))));
         });
     if (ordered && !writeErrors.isEmpty()) {
       assertTrue(writeErrors.size() == 1);
