@@ -68,4 +68,13 @@ final class WriteExceptionTest {
 
     assertEquals("v=2, code=11000", exception.getMessage());
   }
+
+  @Test
+  void messageSaysWhenADuplicateKeyMayComeFromAnEarlierAttempt() {
+    WriteError error = new WriteError(11000, SENSITIVE_MESSAGE, BsonDocument.parse("{}"));
+
+    WriteException exception = new WriteException(error, true);
+
+    assertEquals("v=2, code=11000, resent=true", exception.getMessage());
+  }
 }
