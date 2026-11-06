@@ -37,7 +37,7 @@ public class MongoDBHelper
   private static final String MONGO_USERNAME = "test_username";
   private static final String MONGO_PASSWORD = "test_password";
   private static final String MONGO_IMAGE = "mongodb/mongodb-atlas-local";
-  private static final String MONGO_TAG = "latest";
+  private static final String MONGO_TAG = "8.0";
 
   private static final MongoDBAtlasLocalContainer MONGO_CONTAINER =
       new MongoDBAtlasLocalContainer(MONGO_IMAGE + ":" + MONGO_TAG)
