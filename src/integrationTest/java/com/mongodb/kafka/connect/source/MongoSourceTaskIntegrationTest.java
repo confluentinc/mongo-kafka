@@ -24,7 +24,6 @@ import static com.mongodb.kafka.connect.source.schema.SchemaUtils.assertStructsE
 import static com.mongodb.kafka.connect.util.jmx.internal.MBeanServerUtils.getMBeanAttributes;
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
-import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonList;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
@@ -98,6 +97,16 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
           "_id",
           "{\"_data\": \"825F58DDF4000000032B022C0100296E5A1004BBCFDF90907247ABA61D94DF01D76200461E5F6964002B020004\"}");
 
+  /**
+   * A pipeline for a change stream on the whole cluster that drops the events of the server's
+   * internal databases. The MongoDB image these tests run against updates a heartbeat document in
+   * {@code __mdb_internal_search} every few seconds, so without it such a change stream always has
+   * a new event and {@link #getNextResults} never returns. A test that uses a single database
+   * watches only that database instead.
+   */
+  private static final String EXCLUDE_INTERNAL_DATABASES =
+      "[{\"$match\": {\"ns.db\": {\"$not\": {\"$regex\": \"^__mdb_internal\"}}}}]";
+
   @Mock private SourceTaskContext context;
   @Mock private OffsetStorageReader offsetStorageReader;
 
@@ -126,7 +135,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
       MongoCollection<Document> coll3 = db3.getCollection("coll");
       MongoCollection<Document> coll4 = db1.getCollection("db1Coll2");
 
-      task.start(emptyMap());
+      task.start(singletonMap(MongoSourceConfig.PIPELINE_CONFIG, EXCLUDE_INTERNAL_DATABASES));
 
       insertMany(rangeClosed(1, 75), coll1, coll2);
 
@@ -174,6 +183,7 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
               String namespaceRegex =
                   String.format("(%s\\.coll|%s\\.coll)", db1.getName(), db2.getName());
               put(MongoSourceConfig.COPY_EXISTING_NAMESPACE_REGEX_CONFIG, namespaceRegex);
+              put(MongoSourceConfig.PIPELINE_CONFIG, EXCLUDE_INTERNAL_DATABASES);
             }
           };
       task.start(cfg);
@@ -1034,6 +1044,8 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
           new CreateCollectionOptions()
               .changeStreamPreAndPostImagesOptions(new ChangeStreamPreAndPostImagesOptions(true)));
       HashMap<String, String> cfg = new HashMap<>();
+      // Watch this database only: see EXCLUDE_INTERNAL_DATABASES.
+      cfg.put(MongoSourceConfig.DATABASE_CONFIG, db.getName());
       cfg.put(
           MongoSourceConfig.OUTPUT_FORMAT_VALUE_CONFIG,
           OutputFormat.SCHEMA.name().toLowerCase(Locale.ROOT));
@@ -1069,6 +1081,8 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
       coll.drop();
       db.createCollection(coll.getNamespace().getCollectionName(), new CreateCollectionOptions());
       HashMap<String, String> cfg = new HashMap<>();
+      // Watch this database only: see EXCLUDE_INTERNAL_DATABASES.
+      cfg.put(MongoSourceConfig.DATABASE_CONFIG, db.getName());
       cfg.put(
           MongoSourceConfig.OUTPUT_FORMAT_VALUE_CONFIG,
           OutputFormat.SCHEMA.name().toLowerCase(Locale.ROOT));
@@ -1100,6 +1114,8 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
       coll.drop();
       db.createCollection(coll.getNamespace().getCollectionName(), new CreateCollectionOptions());
       HashMap<String, String> cfg = new HashMap<>();
+      // Watch this database only: see EXCLUDE_INTERNAL_DATABASES.
+      cfg.put(MongoSourceConfig.DATABASE_CONFIG, db.getName());
       cfg.put(
           MongoSourceConfig.OUTPUT_FORMAT_VALUE_CONFIG,
           OutputFormat.SCHEMA.name().toLowerCase(Locale.ROOT));
@@ -1131,6 +1147,8 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
       coll.drop();
       db.createCollection(coll.getNamespace().getCollectionName(), new CreateCollectionOptions());
       HashMap<String, String> cfg = new HashMap<>();
+      // Watch this database only: see EXCLUDE_INTERNAL_DATABASES.
+      cfg.put(MongoSourceConfig.DATABASE_CONFIG, db.getName());
       cfg.put(
           MongoSourceConfig.OUTPUT_FORMAT_VALUE_CONFIG,
           OutputFormat.SCHEMA.name().toLowerCase(Locale.ROOT));
@@ -1161,6 +1179,8 @@ public class MongoSourceTaskIntegrationTest extends MongoKafkaTestCase {
       coll.drop();
       db.createCollection(coll.getNamespace().getCollectionName(), new CreateCollectionOptions());
       HashMap<String, String> cfg = new HashMap<>();
+      // Watch this database only: see EXCLUDE_INTERNAL_DATABASES.
+      cfg.put(MongoSourceConfig.DATABASE_CONFIG, db.getName());
       cfg.put(
           MongoSourceConfig.OUTPUT_FORMAT_VALUE_CONFIG,
           OutputFormat.SCHEMA.name().toLowerCase(Locale.ROOT));
