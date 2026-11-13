@@ -125,6 +125,18 @@ public class MongoSinkConfig extends AbstractConfig {
           + "error is handled according to `errors.tolerance`.";
   static final int RETRY_MAX_ATTEMPTS_DEFAULT = 10;
 
+  public static final String SOCKET_READ_TIMEOUT_MS_CONFIG = "socket.read.timeout.ms";
+  private static final String SOCKET_READ_TIMEOUT_MS_DOC =
+      "The socket read timeout in milliseconds, used when the connection string does not set "
+          + "`socketTimeoutMS`. A `socketTimeoutMS` in the connection string is kept up to 120000, "
+          + "or up to this value if it is larger. A `socketTimeoutMS` of 0 (no timeout) or above "
+          + "that maximum is replaced by the maximum. A write that times out takes up to about "
+          + "twice the timeout plus 30 seconds, because the driver retries it once. Above about "
+          + "135000, that is longer than the default 5 minute `max.poll.interval.ms`, and the "
+          + "connector no longer resends the write, because retries stop 5 minutes after the "
+          + "first failed attempt started.";
+  static final int SOCKET_READ_TIMEOUT_MS_DEFAULT = 90_000;
+
   private static final List<String> INVISIBLE_CONFIGS = singletonList(TOPIC_OVERRIDE_CONFIG);
 
   private Map<String, String> originals;
@@ -378,7 +390,7 @@ public class MongoSinkConfig extends AbstractConfig {
       REGEX_TIMEOUT_MS_DISPLAY);
 
     configDef.defineInternal(PROVIDER_CONFIG, Type.STRING, "", Importance.LOW);
-    // Internal, so it is not documented for users, but it can still be set per connector.
+    // Internal, so they are not documented for users, but they can still be set per connector.
     configDef.defineInternal(
         RETRY_MAX_ATTEMPTS_CONFIG,
         Type.INT,
@@ -386,6 +398,13 @@ public class MongoSinkConfig extends AbstractConfig {
         ConfigDef.Range.atLeast(1),
         Importance.LOW,
         RETRY_MAX_ATTEMPTS_DOC);
+    configDef.defineInternal(
+        SOCKET_READ_TIMEOUT_MS_CONFIG,
+        Type.INT,
+        SOCKET_READ_TIMEOUT_MS_DEFAULT,
+        ConfigDef.Range.atLeast(1),
+        Importance.LOW,
+        SOCKET_READ_TIMEOUT_MS_DOC);
 
     MongoSinkTopicConfig.BASE_CONFIG.configKeys().values().forEach(configDef::define);
     return configDef;
