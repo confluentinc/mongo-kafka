@@ -39,10 +39,13 @@ import org.slf4j.LoggerFactory;
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
+import com.mongodb.MongoSocketException;
+import com.mongodb.MongoSocketReadTimeoutException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.event.CommandFailedEvent;
 import com.mongodb.event.CommandListener;
+import com.mongodb.event.CommandStartedEvent;
 import com.mongodb.event.CommandSucceededEvent;
 
 import com.mongodb.kafka.connect.Versions;
@@ -52,6 +55,8 @@ import com.mongodb.kafka.connect.source.statistics.StatisticsManager;
 import com.mongodb.kafka.connect.util.ResumeTokenUtils;
 import com.mongodb.kafka.connect.util.VisibleForTesting;
 import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
+import com.mongodb.kafka.connect.util.jmx.internal.RunningDurationMetric;
+import com.mongodb.lang.Nullable;
 
 /**
  * A Kafka Connect source task that uses change streams to broadcast changes to the collection,
@@ -125,6 +130,11 @@ public final class MongoSourceTask extends SourceTask {
       StatisticsManager statsManager = statisticsManager;
       CommandListener statisticsCommandListener =
           new CommandListener() {
+            @Override
+            public void commandStarted(final CommandStartedEvent event) {
+              mongoCommandStarted(event, statsManager.currentStatistics());
+            }
+
             @Override
             public void commandSucceeded(final CommandSucceededEvent event) {
               mongoCommandSucceeded(event, statsManager.currentStatistics());
@@ -254,8 +264,38 @@ public final class MongoSourceTask extends SourceTask {
   }
 
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  static void mongoCommandStarted(
+      final CommandStartedEvent event, final SourceTaskStatistics currentStatistics) {
+    RunningDurationMetric running = runningCommands(event.getCommandName(), currentStatistics);
+    if (running != null) {
+      running.start(event.getRequestId());
+    }
+  }
+
+  /** The tracker of running commands for {@code commandName}, or null if it is not tracked. */
+  @Nullable
+  private static RunningDurationMetric runningCommands(
+      final String commandName, final SourceTaskStatistics currentStatistics) {
+    if ("getMore".equals(commandName)) {
+      return currentStatistics.getGetmoreCommandRunning();
+    } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
+      return currentStatistics.getInitialCommandRunning();
+    }
+    return null;
+  }
+
+  private static void finishRunningCommand(
+      final String commandName, final int requestId, final SourceTaskStatistics currentStatistics) {
+    RunningDurationMetric running = runningCommands(commandName, currentStatistics);
+    if (running != null) {
+      running.finish(requestId);
+    }
+  }
+
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
   static void mongoCommandSucceeded(
       final CommandSucceededEvent event, final SourceTaskStatistics currentStatistics) {
+    finishRunningCommand(event.getCommandName(), event.getRequestId(), currentStatistics);
     String commandName = event.getCommandName();
     long elapsedTimeMs = event.getElapsedTime(TimeUnit.MILLISECONDS);
     if ("getMore".equals(commandName)) {
@@ -270,6 +310,8 @@ public final class MongoSourceTask extends SourceTask {
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
   static void mongoCommandFailed(
       final CommandFailedEvent event, final SourceTaskStatistics currentStatistics) {
+    // Before the early return below, so an ignored failure still stops counting as running.
+    finishRunningCommand(event.getCommandName(), event.getRequestId(), currentStatistics);
     Throwable e = event.getThrowable();
     if (e instanceof MongoCommandException) {
       if (doesNotSupportsStartAfter((MongoCommandException) e)) {
@@ -279,10 +321,24 @@ public final class MongoSourceTask extends SourceTask {
     }
     String commandName = event.getCommandName();
     long elapsedTimeMs = event.getElapsedTime(TimeUnit.MILLISECONDS);
+    // A read timeout is also a MongoSocketException, so check it first: each failure is counted as
+    // one or the other, never both.
+    boolean readTimeout = e instanceof MongoSocketReadTimeoutException;
+    boolean socketError = !readTimeout && e instanceof MongoSocketException;
     if ("getMore".equals(commandName)) {
       currentStatistics.getGetmoreCommandsFailed().sample(elapsedTimeMs);
+      if (readTimeout) {
+        currentStatistics.getGetmoreCommandsReadTimeout().sample(1);
+      } else if (socketError) {
+        currentStatistics.getGetmoreCommandsSocketError().sample(1);
+      }
     } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
       currentStatistics.getInitialCommandsFailed().sample(elapsedTimeMs);
+      if (readTimeout) {
+        currentStatistics.getInitialCommandsReadTimeout().sample(1);
+      } else if (socketError) {
+        currentStatistics.getInitialCommandsSocketError().sample(1);
+      }
     }
   }
 }
