@@ -45,41 +45,42 @@ class MongoSourceTaskCommandMetricsTest {
       new ConnectionDescription(new ServerId(new ClusterId(), new ServerAddress()));
 
   @Test
-  @DisplayName("A successful command updates its latest duration")
-  void testSucceededCommandSamplesLatestDuration() throws Exception {
+  @DisplayName("A long resume lands in the long buckets of the successful initial commands")
+  void testSucceededLongResumeIsBucketed() throws Exception {
     SourceTaskStatistics statistics = new SourceTaskStatistics("test");
 
-    MongoSourceTask.mongoCommandSucceeded(succeeded("aggregate", 155_000), statistics);
-    MongoSourceTask.mongoCommandSucceeded(succeeded("getMore", 5_003), statistics);
+    MongoSourceTask.mongoCommandSucceeded(succeeded("aggregate", 27 * 60_000), statistics);
+    MongoSourceTask.mongoCommandSucceeded(succeeded("getMore", 1_014), statistics);
 
-    assertEquals(155_000L, value(statistics, "latest-initial-command-duration-ms"));
-    assertEquals(5_003L, value(statistics, "latest-getmore-command-duration-ms"));
-    assertEquals(1L, value(statistics, "initial-commands-successful-duration-over-60000-ms"));
+    assertEquals(1L, value(statistics, "initial-commands-successful-duration-over-300000-ms"));
+    assertEquals(0L, value(statistics, "initial-commands-successful-duration-over-1800000-ms"));
+    assertEquals(1L, value(statistics, "getmore-commands-successful-duration-over-1000-ms"));
+    assertEquals(0L, value(statistics, "getmore-commands-successful-duration-over-10000-ms"));
   }
 
   @Test
-  @DisplayName("A failed command, such as a read timeout, also updates its latest duration")
-  void testFailedCommandSamplesLatestDuration() throws Exception {
+  @DisplayName("A failed command, such as a read timeout, lands in the failed buckets")
+  void testFailedCommandIsBucketed() throws Exception {
     SourceTaskStatistics statistics = new SourceTaskStatistics("test");
     MongoSocketReadTimeoutException timeout =
         new MongoSocketReadTimeoutException("timed out", new ServerAddress(), null);
 
-    MongoSourceTask.mongoCommandFailed(failed("aggregate", 16_000, timeout), statistics);
-    MongoSourceTask.mongoCommandFailed(failed("getMore", 20_000, timeout), statistics);
+    MongoSourceTask.mongoCommandFailed(failed("aggregate", 90_000, timeout), statistics);
 
-    assertEquals(16_000L, value(statistics, "latest-initial-command-duration-ms"));
-    assertEquals(20_000L, value(statistics, "latest-getmore-command-duration-ms"));
+    assertEquals(1L, value(statistics, "initial-commands-failed"));
+    assertEquals(1L, value(statistics, "initial-commands-failed-duration-over-60000-ms"));
+    assertEquals(0L, value(statistics, "initial-commands-failed-duration-over-300000-ms"));
   }
 
   @Test
-  @DisplayName("Other commands do not change the latest durations")
+  @DisplayName("Other commands are not counted")
   void testOtherCommandsAreIgnored() throws Exception {
     SourceTaskStatistics statistics = new SourceTaskStatistics("test");
 
     MongoSourceTask.mongoCommandSucceeded(succeeded("hello", 3), statistics);
 
-    assertEquals(0L, value(statistics, "latest-initial-command-duration-ms"));
-    assertEquals(0L, value(statistics, "latest-getmore-command-duration-ms"));
+    assertEquals(0L, value(statistics, "initial-commands-successful"));
+    assertEquals(0L, value(statistics, "getmore-commands-successful"));
   }
 
   @Test

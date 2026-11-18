@@ -184,12 +184,6 @@ public class SourceTaskStatistics extends MongoMBean {
     putLongCommandDescriptions("initial-commands-failed", "failed initial commands");
     putLongCommandDescriptions("getmore-commands-failed", "failed getMore commands");
 
-    DESCRIPTIONS.put(
-        "latest-initial-command-duration-ms",
-        "The number of milliseconds the most recent initial command issued by a MongoDB source task took, whether it succeeded or failed. For a change stream, this is the time to open or resume the cursor.");
-    DESCRIPTIONS.put(
-        "latest-getmore-command-duration-ms",
-        "The number of milliseconds the most recent getMore command issued by a MongoDB source task took, whether it succeeded or failed.");
   }
 
   /** Describes the buckets that {@link #COMMAND_MS_LIMITS} adds above {@link #MS_LIMITS}. */
@@ -224,10 +218,6 @@ public class SourceTaskStatistics extends MongoMBean {
       registerMs("initial-commands-failed", COMMAND_MS_LIMITS);
   private final Metric getmoreCommandsFailed =
       registerMs("getmore-commands-failed", COMMAND_MS_LIMITS);
-  private final Metric latestInitialCommandDurationMs =
-      registerLatest("latest-initial-command-duration-ms");
-  private final Metric latestGetmoreCommandDurationMs =
-      registerLatest("latest-getmore-command-duration-ms");
 
   public SourceTaskStatistics(final String name) {
     super(name);
@@ -277,13 +267,6 @@ public class SourceTaskStatistics extends MongoMBean {
     return getmoreCommandsFailed;
   }
 
-  public Metric getLatestInitialCommandDurationMs() {
-    return latestInitialCommandDurationMs;
-  }
-
-  public Metric getLatestGetmoreCommandDurationMs() {
-    return latestGetmoreCommandDurationMs;
-  }
 
   @Override
   protected String getDescription(final String name) {

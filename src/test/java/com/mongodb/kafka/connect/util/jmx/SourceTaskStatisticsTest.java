@@ -68,21 +68,6 @@ class SourceTaskStatisticsTest {
     assertTrue(attributes.stream().noneMatch(a -> a.startsWith("in-task-poll-duration-over-6")));
   }
 
-  @Test
-  @DisplayName("Latest command durations read 0 until sampled, then hold the last sample")
-  void testLatestCommandDurations() throws Exception {
-    SourceTaskStatistics statistics = new SourceTaskStatistics("test");
-    assertEquals(0L, value(statistics, "latest-initial-command-duration-ms"));
-    assertEquals(0L, value(statistics, "latest-getmore-command-duration-ms"));
-
-    statistics.getLatestInitialCommandDurationMs().sample(31_000L);
-    statistics.getLatestInitialCommandDurationMs().sample(1_500L);
-    statistics.getLatestGetmoreCommandDurationMs().sample(5_002L);
-
-    assertEquals(1_500L, value(statistics, "latest-initial-command-duration-ms"));
-    assertEquals(5_002L, value(statistics, "latest-getmore-command-duration-ms"));
-  }
-
   private static long value(final SourceTaskStatistics statistics, final String name)
       throws Exception {
     return (Long) ((Attribute) statistics.getAttribute(name)).getValue();
