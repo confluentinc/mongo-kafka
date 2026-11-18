@@ -178,6 +178,27 @@ public class SourceTaskStatistics extends MongoMBean {
     DESCRIPTIONS.put(
         "getmore-commands-failed-duration-over-10000-ms",
         "The total number of failed getMore commands issued by a MongoDB source task with a duration that exceeded 10000ms.");
+
+    putLongCommandDescriptions("initial-commands-successful", "successful initial commands");
+    putLongCommandDescriptions("getmore-commands-successful", "successful getMore commands");
+    putLongCommandDescriptions("initial-commands-failed", "failed initial commands");
+    putLongCommandDescriptions("getmore-commands-failed", "failed getMore commands");
+
+  }
+
+  /** Describes the buckets that {@link #COMMAND_MS_LIMITS} adds above {@link #MS_LIMITS}. */
+  private static void putLongCommandDescriptions(final String metric, final String commands) {
+    for (long limit : COMMAND_MS_LIMITS) {
+      if (limit > MS_LIMITS[MS_LIMITS.length - 1]) {
+        DESCRIPTIONS.put(
+            metric + "-duration-over-" + limit + "-ms",
+            "The total number of "
+                + commands
+                + " issued by a MongoDB source task with a duration that exceeded "
+                + limit
+                + "ms.");
+      }
+    }
   }
 
   private final Metric records = registerTotal("records");
@@ -189,10 +210,14 @@ public class SourceTaskStatistics extends MongoMBean {
 
   private final Metric inTaskPoll = registerMs("in-task-poll");
   private final Metric inConnectFramework = registerMs("in-connect-framework");
-  private final Metric initialCommandsSuccessful = registerMs("initial-commands-successful");
-  private final Metric getmoreCommandsSuccessful = registerMs("getmore-commands-successful");
-  private final Metric initialCommandsFailed = registerMs("initial-commands-failed");
-  private final Metric getmoreCommandsFailed = registerMs("getmore-commands-failed");
+  private final Metric initialCommandsSuccessful =
+      registerMs("initial-commands-successful", COMMAND_MS_LIMITS);
+  private final Metric getmoreCommandsSuccessful =
+      registerMs("getmore-commands-successful", COMMAND_MS_LIMITS);
+  private final Metric initialCommandsFailed =
+      registerMs("initial-commands-failed", COMMAND_MS_LIMITS);
+  private final Metric getmoreCommandsFailed =
+      registerMs("getmore-commands-failed", COMMAND_MS_LIMITS);
 
   public SourceTaskStatistics(final String name) {
     super(name);
@@ -241,6 +266,7 @@ public class SourceTaskStatistics extends MongoMBean {
   public Metric getGetmoreCommandsFailed() {
     return getmoreCommandsFailed;
   }
+
 
   @Override
   protected String getDescription(final String name) {

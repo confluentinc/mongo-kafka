@@ -379,8 +379,29 @@ final class StartedMongoSourceTask implements AutoCloseable {
     }
   }
 
+  /**
+   * The total size of the documents in KB, rounded up. A document that is not a {@link
+   * RawBsonDocument} (only in tests) counts as 0.
+   */
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  static long batchSizeKb(final List<BsonDocument> batch) {
+    long bytes = 0;
+    for (BsonDocument document : batch) {
+      if (document instanceof RawBsonDocument) {
+        bytes += ((RawBsonDocument) document).getByteBuffer().limit();
+      }
+    }
+    return (bytes + 1023) / 1024;
+  }
+
   private void initializeCursorAndHeartbeatManager() {
+    long startMs = time.milliseconds();
     cursor = createCursor(sourceConfig, mongoClient);
+    // Opening or resuming a change stream can take from milliseconds to many minutes.
+    LOGGER.debug(
+        "{} the change stream cursor in {} ms",
+        cursor == null ? "Failed to open" : "Opened",
+        time.milliseconds() - startMs);
     heartbeatManager =
         new HeartbeatManager(
             time,
@@ -612,6 +633,7 @@ final class StartedMongoSourceTask implements AutoCloseable {
       return batch;
     }
 
+    long readStartMs = time.milliseconds();
     try {
       BsonDocument next;
       do {
@@ -620,6 +642,14 @@ final class StartedMongoSourceTask implements AutoCloseable {
           batch.add(next);
         }
       } while (next != null && batch.size() < maxBatchSize && cursor.available() > 0);
+      if (LOGGER.isDebugEnabled()) {
+        // Counts and sizes only: the documents themselves are customer data.
+        LOGGER.debug(
+            "Read {} change stream event(s), {} KB, from the cursor in {} ms",
+            batch.size(),
+            batchSizeKb(batch),
+            time.milliseconds() - readStartMs);
+      }
     } catch (MongoException e) {
       closeCursor();
       if (isRunning) {
