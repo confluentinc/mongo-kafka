@@ -20,6 +20,7 @@ import java.util.Map;
 
 import com.mongodb.kafka.connect.util.jmx.internal.Metric;
 import com.mongodb.kafka.connect.util.jmx.internal.MongoMBean;
+import com.mongodb.kafka.connect.util.jmx.internal.RunningDurationMetric;
 
 public class SourceTaskStatistics extends MongoMBean {
 
@@ -179,6 +180,25 @@ public class SourceTaskStatistics extends MongoMBean {
         "getmore-commands-failed-duration-over-10000-ms",
         "The total number of failed getMore commands issued by a MongoDB source task with a duration that exceeded 10000ms.");
 
+    DESCRIPTIONS.put(
+        "initial-command-running-duration-ms",
+        "The number of milliseconds the oldest initial command issued by a MongoDB source task that has not finished yet has been running, or 0 if none is running. For a change stream, this is the time spent so far opening or resuming the cursor.");
+    DESCRIPTIONS.put(
+        "getmore-command-running-duration-ms",
+        "The number of milliseconds the oldest getMore command issued by a MongoDB source task that has not finished yet has been running, or 0 if none is running.");
+    DESCRIPTIONS.put(
+        "initial-commands-read-timeout",
+        "The total number of initial commands issued by a MongoDB source task that failed with a socket read timeout. Also counted in initial-commands-failed.");
+    DESCRIPTIONS.put(
+        "initial-commands-socket-error",
+        "The total number of initial commands issued by a MongoDB source task that failed with a socket error other than a read timeout, for example a connection reset or closed by the server. Also counted in initial-commands-failed.");
+    DESCRIPTIONS.put(
+        "getmore-commands-read-timeout",
+        "The total number of getMore commands issued by a MongoDB source task that failed with a socket read timeout. Also counted in getmore-commands-failed.");
+    DESCRIPTIONS.put(
+        "getmore-commands-socket-error",
+        "The total number of getMore commands issued by a MongoDB source task that failed with a socket error other than a read timeout, for example a connection reset or closed by the server. Also counted in getmore-commands-failed.");
+
     putLongCommandDescriptions("initial-commands-successful", "successful initial commands");
     putLongCommandDescriptions("getmore-commands-successful", "successful getMore commands");
     putLongCommandDescriptions("initial-commands-failed", "failed initial commands");
@@ -218,9 +238,40 @@ public class SourceTaskStatistics extends MongoMBean {
       registerMs("initial-commands-failed", COMMAND_MS_LIMITS);
   private final Metric getmoreCommandsFailed =
       registerMs("getmore-commands-failed", COMMAND_MS_LIMITS);
+  private final Metric initialCommandsReadTimeout = registerTotal("initial-commands-read-timeout");
+  private final Metric initialCommandsSocketError = registerTotal("initial-commands-socket-error");
+  private final Metric getmoreCommandsReadTimeout = registerTotal("getmore-commands-read-timeout");
+  private final Metric getmoreCommandsSocketError = registerTotal("getmore-commands-socket-error");
+  private final RunningDurationMetric initialCommandRunning;
+  private final RunningDurationMetric getmoreCommandRunning;
 
   public SourceTaskStatistics(final String name) {
+    this(name, newInitialCommandRunning(), newGetmoreCommandRunning());
+  }
+
+  /**
+   * @param initialCommandRunning tracks running initial commands; share one instance between the
+   *     copy and change stream statistics of a task, so a command that starts before the task
+   *     switches between them still finishes
+   * @param getmoreCommandRunning tracks running getMore commands, shared in the same way
+   */
+  public SourceTaskStatistics(
+      final String name,
+      final RunningDurationMetric initialCommandRunning,
+      final RunningDurationMetric getmoreCommandRunning) {
     super(name);
+    this.initialCommandRunning = register(initialCommandRunning);
+    this.getmoreCommandRunning = register(getmoreCommandRunning);
+  }
+
+  /** Creates the running initial command tracker that a task's copy and stream statistics share. */
+  public static RunningDurationMetric newInitialCommandRunning() {
+    return new RunningDurationMetric("initial-command-running-duration-ms");
+  }
+
+  /** Creates the running getMore tracker that a task's copy and stream statistics share. */
+  public static RunningDurationMetric newGetmoreCommandRunning() {
+    return new RunningDurationMetric("getmore-command-running-duration-ms");
   }
 
   public Metric getRecords() {
@@ -265,6 +316,30 @@ public class SourceTaskStatistics extends MongoMBean {
 
   public Metric getGetmoreCommandsFailed() {
     return getmoreCommandsFailed;
+  }
+
+  public Metric getInitialCommandsReadTimeout() {
+    return initialCommandsReadTimeout;
+  }
+
+  public Metric getInitialCommandsSocketError() {
+    return initialCommandsSocketError;
+  }
+
+  public Metric getGetmoreCommandsReadTimeout() {
+    return getmoreCommandsReadTimeout;
+  }
+
+  public Metric getGetmoreCommandsSocketError() {
+    return getmoreCommandsSocketError;
+  }
+
+  public RunningDurationMetric getInitialCommandRunning() {
+    return initialCommandRunning;
+  }
+
+  public RunningDurationMetric getGetmoreCommandRunning() {
+    return getmoreCommandRunning;
   }
 
 
