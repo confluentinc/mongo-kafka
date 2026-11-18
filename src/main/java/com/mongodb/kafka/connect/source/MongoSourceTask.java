@@ -260,8 +260,10 @@ public final class MongoSourceTask extends SourceTask {
     long elapsedTimeMs = event.getElapsedTime(TimeUnit.MILLISECONDS);
     if ("getMore".equals(commandName)) {
       currentStatistics.getGetmoreCommandsSuccessful().sample(elapsedTimeMs);
+      currentStatistics.getLatestGetmoreCommandDurationMs().sample(elapsedTimeMs);
     } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
       currentStatistics.getInitialCommandsSuccessful().sample(elapsedTimeMs);
+      currentStatistics.getLatestInitialCommandDurationMs().sample(elapsedTimeMs);
     }
     ResumeTokenUtils.getResponseOffsetSecs(event.getResponse())
         .ifPresent(offset -> currentStatistics.getLatestMongodbTimeDifferenceSecs().sample(offset));
@@ -281,8 +283,10 @@ public final class MongoSourceTask extends SourceTask {
     long elapsedTimeMs = event.getElapsedTime(TimeUnit.MILLISECONDS);
     if ("getMore".equals(commandName)) {
       currentStatistics.getGetmoreCommandsFailed().sample(elapsedTimeMs);
+      currentStatistics.getLatestGetmoreCommandDurationMs().sample(elapsedTimeMs);
     } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
       currentStatistics.getInitialCommandsFailed().sample(elapsedTimeMs);
+      currentStatistics.getLatestInitialCommandDurationMs().sample(elapsedTimeMs);
     }
   }
 }
