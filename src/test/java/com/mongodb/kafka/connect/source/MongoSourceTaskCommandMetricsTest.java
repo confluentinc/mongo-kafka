@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.management.Attribute;
 
 import org.bson.BsonDocument;
@@ -38,13 +39,17 @@ import com.mongodb.connection.ClusterId;
 import com.mongodb.connection.ConnectionDescription;
 import com.mongodb.connection.ServerId;
 import com.mongodb.event.CommandFailedEvent;
+import com.mongodb.event.CommandListener;
 import com.mongodb.event.CommandStartedEvent;
 import com.mongodb.event.CommandSucceededEvent;
 
+import com.mongodb.kafka.connect.source.statistics.StatisticsManager;
 import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
 import com.mongodb.kafka.connect.util.jmx.internal.RunningDurationMetric;
 
 class MongoSourceTaskCommandMetricsTest {
+  private static final String INITIAL_RUNNING = "initial-command-running-duration-ms";
+  private static final String GETMORE_RUNNING = "getmore-command-running-duration-ms";
   private static final ConnectionDescription CONNECTION =
       new ConnectionDescription(new ServerId(new ClusterId(), new ServerAddress()));
 
@@ -107,33 +112,51 @@ class MongoSourceTaskCommandMetricsTest {
   @Test
   @DisplayName("A command counts as running from its start until it succeeds or fails")
   void testRunningCommandIsFinished() throws Exception {
-    SourceTaskStatistics statistics = new SourceTaskStatistics("test");
-    MongoSourceTask.mongoCommandStarted(started("aggregate", 1), statistics);
-    MongoSourceTask.mongoCommandStarted(started("getMore", 2), statistics);
-    MongoSourceTask.mongoCommandStarted(started("hello", 3), statistics);
+    TwoPhaseStatistics manager = new TwoPhaseStatistics(false);
+    CommandListener listener = MongoSourceTask.statisticsCommandListener(manager);
+    listener.commandStarted(started("aggregate", 1));
+    listener.commandStarted(started("getMore", 2));
+    listener.commandStarted(started("hello", 3));
+    manager.advanceMs(500);
 
-    MongoSourceTask.mongoCommandSucceeded(succeeded("aggregate", 1, 10), statistics);
-    MongoSourceTask.mongoCommandFailed(
-        failed("getMore", 2, 10, new MongoSocketReadException("closed", new ServerAddress())),
-        statistics);
+    assertEquals(500L, value(manager.stream, INITIAL_RUNNING));
+    assertEquals(500L, value(manager.stream, GETMORE_RUNNING));
 
-    assertEquals(0L, value(statistics, "initial-command-running-duration-ms"));
-    assertEquals(0L, value(statistics, "getmore-command-running-duration-ms"));
+    listener.commandSucceeded(succeeded("aggregate", 1, 10));
+    listener.commandFailed(
+        failed("getMore", 2, 10, new MongoSocketReadException("closed", new ServerAddress())));
+
+    assertEquals(0L, value(manager.stream, INITIAL_RUNNING));
+    assertEquals(0L, value(manager.stream, GETMORE_RUNNING));
   }
 
   @Test
-  @DisplayName("A command started under the copy statistics finishes under the stream statistics")
+  @DisplayName("A command running in one phase is not shown on the other phase's statistics")
+  void testRunningCommandStaysInItsPhase() throws Exception {
+    TwoPhaseStatistics manager = new TwoPhaseStatistics(false);
+    CommandListener listener = MongoSourceTask.statisticsCommandListener(manager);
+    listener.commandStarted(started("getMore", 1));
+    manager.advanceMs(500);
+
+    assertEquals(500L, value(manager.stream, GETMORE_RUNNING));
+    assertEquals(0L, value(manager.copy, GETMORE_RUNNING));
+  }
+
+  @Test
+  @DisplayName("A command started in the copy phase finishes after the switch to the stream phase")
   void testRunningCommandSurvivesStatisticsSwitch() throws Exception {
-    RunningDurationMetric initial = SourceTaskStatistics.newInitialCommandRunning();
-    RunningDurationMetric getmore = SourceTaskStatistics.newGetmoreCommandRunning();
-    SourceTaskStatistics copy = new SourceTaskStatistics("copy", initial, getmore);
-    SourceTaskStatistics stream = new SourceTaskStatistics("stream", initial, getmore);
+    TwoPhaseStatistics manager = new TwoPhaseStatistics(true);
+    CommandListener listener = MongoSourceTask.statisticsCommandListener(manager);
+    listener.commandStarted(started("aggregate", 1));
+    manager.advanceMs(500);
+    assertEquals(500L, value(manager.copy, INITIAL_RUNNING));
 
-    MongoSourceTask.mongoCommandStarted(started("aggregate", 1), copy);
-    MongoSourceTask.mongoCommandSucceeded(succeeded("aggregate", 1, 10), stream);
+    manager.switchToStreamStatistics();
+    listener.commandSucceeded(succeeded("aggregate", 1, 10));
 
-    assertEquals(0L, value(copy, "initial-command-running-duration-ms"));
-    assertEquals(0L, value(stream, "initial-command-running-duration-ms"));
+    assertEquals(0L, value(manager.copy, INITIAL_RUNNING));
+    assertEquals(0L, value(manager.stream, INITIAL_RUNNING));
+    assertEquals(1L, value(manager.stream, "initial-commands-successful"));
   }
 
   @Test
@@ -198,5 +221,50 @@ class MongoSourceTaskCommandMetricsTest {
   private static long value(final SourceTaskStatistics statistics, final String name)
       throws Exception {
     return (Long) ((Attribute) statistics.getAttribute(name)).getValue();
+  }
+
+  /** Copy and stream statistics on a test clock, finishing commands the way the JMX one does. */
+  private static final class TwoPhaseStatistics implements StatisticsManager {
+    private final AtomicLong nanos = new AtomicLong(1_000_000_000L);
+    private final SourceTaskStatistics copy = statistics("copy");
+    private final SourceTaskStatistics stream = statistics("stream");
+    private volatile SourceTaskStatistics current;
+
+    TwoPhaseStatistics(final boolean startWithCopy) {
+      current = startWithCopy ? copy : stream;
+    }
+
+    private SourceTaskStatistics statistics(final String name) {
+      return new SourceTaskStatistics(
+          name,
+          new RunningDurationMetric(INITIAL_RUNNING, nanos::get),
+          new RunningDurationMetric(GETMORE_RUNNING, nanos::get));
+    }
+
+    void advanceMs(final long ms) {
+      nanos.addAndGet(TimeUnit.MILLISECONDS.toNanos(ms));
+    }
+
+    @Override
+    public SourceTaskStatistics currentStatistics() {
+      return current;
+    }
+
+    @Override
+    public void switchToStreamStatistics() {
+      current = stream;
+    }
+
+    @Override
+    public void commandFinished(final String commandName, final int requestId) {
+      copy.commandFinished(commandName, requestId);
+      stream.commandFinished(commandName, requestId);
+    }
+
+    @Override
+    public void setDNDTask(final boolean exempt) {}
+
+    @Override
+    public void close() {}
   }
 }

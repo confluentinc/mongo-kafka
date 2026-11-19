@@ -55,8 +55,6 @@ import com.mongodb.kafka.connect.source.statistics.StatisticsManager;
 import com.mongodb.kafka.connect.util.ResumeTokenUtils;
 import com.mongodb.kafka.connect.util.VisibleForTesting;
 import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
-import com.mongodb.kafka.connect.util.jmx.internal.RunningDurationMetric;
-import com.mongodb.lang.Nullable;
 
 /**
  * A Kafka Connect source task that uses change streams to broadcast changes to the collection,
@@ -127,29 +125,10 @@ public final class MongoSourceTask extends SourceTask {
       if (shouldCopyData) {
         statisticsManager.setDNDTask(true);
       }
-      StatisticsManager statsManager = statisticsManager;
-      CommandListener statisticsCommandListener =
-          new CommandListener() {
-            @Override
-            public void commandStarted(final CommandStartedEvent event) {
-              mongoCommandStarted(event, statsManager.currentStatistics());
-            }
-
-            @Override
-            public void commandSucceeded(final CommandSucceededEvent event) {
-              mongoCommandSucceeded(event, statsManager.currentStatistics());
-            }
-
-            @Override
-            public void commandFailed(final CommandFailedEvent event) {
-              mongoCommandFailed(event, statsManager.currentStatistics());
-            }
-          };
-
       MongoClientSettings.Builder builder =
           MongoClientSettings.builder()
               .applyConnectionString(sourceConfig.getConnectionString())
-              .addCommandListener(statisticsCommandListener)
+              .addCommandListener(statisticsCommandListener(statisticsManager))
               .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sourceConfig));
 
       if (sourceConfig.getCustomCredentialProvider() != null) {
@@ -264,38 +243,33 @@ public final class MongoSourceTask extends SourceTask {
   }
 
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
-  static void mongoCommandStarted(
-      final CommandStartedEvent event, final SourceTaskStatistics currentStatistics) {
-    RunningDurationMetric running = runningCommands(event.getCommandName(), currentStatistics);
-    if (running != null) {
-      running.start(event.getRequestId());
-    }
-  }
+  static CommandListener statisticsCommandListener(final StatisticsManager statisticsManager) {
+    return new CommandListener() {
+      @Override
+      public void commandStarted(final CommandStartedEvent event) {
+        statisticsManager
+            .currentStatistics()
+            .commandStarted(event.getCommandName(), event.getRequestId());
+      }
 
-  /** The tracker of running commands for {@code commandName}, or null if it is not tracked. */
-  @Nullable
-  private static RunningDurationMetric runningCommands(
-      final String commandName, final SourceTaskStatistics currentStatistics) {
-    if ("getMore".equals(commandName)) {
-      return currentStatistics.getGetmoreCommandRunning();
-    } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
-      return currentStatistics.getInitialCommandRunning();
-    }
-    return null;
-  }
+      @Override
+      public void commandSucceeded(final CommandSucceededEvent event) {
+        statisticsManager.commandFinished(event.getCommandName(), event.getRequestId());
+        mongoCommandSucceeded(event, statisticsManager.currentStatistics());
+      }
 
-  private static void finishRunningCommand(
-      final String commandName, final int requestId, final SourceTaskStatistics currentStatistics) {
-    RunningDurationMetric running = runningCommands(commandName, currentStatistics);
-    if (running != null) {
-      running.finish(requestId);
-    }
+      @Override
+      public void commandFailed(final CommandFailedEvent event) {
+        // Every failure stops counting as running, including the ones mongoCommandFailed ignores.
+        statisticsManager.commandFinished(event.getCommandName(), event.getRequestId());
+        mongoCommandFailed(event, statisticsManager.currentStatistics());
+      }
+    };
   }
 
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
   static void mongoCommandSucceeded(
       final CommandSucceededEvent event, final SourceTaskStatistics currentStatistics) {
-    finishRunningCommand(event.getCommandName(), event.getRequestId(), currentStatistics);
     String commandName = event.getCommandName();
     long elapsedTimeMs = event.getElapsedTime(TimeUnit.MILLISECONDS);
     if ("getMore".equals(commandName)) {
@@ -310,8 +284,6 @@ public final class MongoSourceTask extends SourceTask {
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
   static void mongoCommandFailed(
       final CommandFailedEvent event, final SourceTaskStatistics currentStatistics) {
-    // Before the early return below, so an ignored failure still stops counting as running.
-    finishRunningCommand(event.getCommandName(), event.getRequestId(), currentStatistics);
     Throwable e = event.getThrowable();
     if (e instanceof MongoCommandException) {
       if (doesNotSupportsStartAfter((MongoCommandException) e)) {

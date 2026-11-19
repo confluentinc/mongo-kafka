@@ -22,6 +22,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
+import com.mongodb.kafka.connect.util.VisibleForTesting;
+
 /**
  * How long, in milliseconds, the oldest command that has started but not yet finished has been
  * running, or 0 when none is running. Unlike a metric sampled when a command finishes, it shows a
@@ -40,7 +42,8 @@ public final class RunningDurationMetric implements Metric {
     this(name, System::nanoTime);
   }
 
-  RunningDurationMetric(final String name, final LongSupplier nanoTime) {
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  public RunningDurationMetric(final String name, final LongSupplier nanoTime) {
     this.name = name;
     this.nanoTime = nanoTime;
   }
@@ -78,6 +81,7 @@ public final class RunningDurationMetric implements Metric {
 
   @Override
   public void emit(final Consumer<MetricValue> consumer) {
-    consumer.accept(new MetricValue.LatestMetricValue(name, this::runningMs));
+    // Combined as the larger value: the oldest command running in either phase.
+    consumer.accept(new MetricValue.MaxMetricValue(name, this::runningMs));
   }
 }

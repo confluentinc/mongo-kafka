@@ -18,6 +18,9 @@ package com.mongodb.kafka.connect.util.jmx;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.mongodb.lang.Nullable;
+
+import com.mongodb.kafka.connect.util.VisibleForTesting;
 import com.mongodb.kafka.connect.util.jmx.internal.Metric;
 import com.mongodb.kafka.connect.util.jmx.internal.MongoMBean;
 import com.mongodb.kafka.connect.util.jmx.internal.RunningDurationMetric;
@@ -249,12 +252,8 @@ public class SourceTaskStatistics extends MongoMBean {
     this(name, newInitialCommandRunning(), newGetmoreCommandRunning());
   }
 
-  /**
-   * @param initialCommandRunning tracks running initial commands; share one instance between the
-   *     copy and change stream statistics of a task, so a command that starts before the task
-   *     switches between them still finishes
-   * @param getmoreCommandRunning tracks running getMore commands, shared in the same way
-   */
+  /** For tests that control the clock of the running command trackers. */
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
   public SourceTaskStatistics(
       final String name,
       final RunningDurationMetric initialCommandRunning,
@@ -264,14 +263,47 @@ public class SourceTaskStatistics extends MongoMBean {
     this.getmoreCommandRunning = register(getmoreCommandRunning);
   }
 
-  /** Creates the running initial command tracker that a task's copy and stream statistics share. */
-  public static RunningDurationMetric newInitialCommandRunning() {
+  private static RunningDurationMetric newInitialCommandRunning() {
     return new RunningDurationMetric("initial-command-running-duration-ms");
   }
 
-  /** Creates the running getMore tracker that a task's copy and stream statistics share. */
-  public static RunningDurationMetric newGetmoreCommandRunning() {
+  private static RunningDurationMetric newGetmoreCommandRunning() {
     return new RunningDurationMetric("getmore-command-running-duration-ms");
+  }
+
+  /** Records that a command started. Only initial (aggregate or find) and getMore are tracked. */
+  public void commandStarted(final String commandName, final int requestId) {
+    RunningDurationMetric running = runningCommands(commandName);
+    if (running != null) {
+      running.start(requestId);
+    }
+  }
+
+  /**
+   * Records that a command succeeded or failed. A command this statistics did not start, such as
+   * one that started in the other phase, is ignored.
+   */
+  public void commandFinished(final String commandName, final int requestId) {
+    RunningDurationMetric running = runningCommands(commandName);
+    if (running != null) {
+      running.finish(requestId);
+    }
+  }
+
+  /** Forgets every running command, for when the task's statistics close. */
+  public void clearRunningCommands() {
+    initialCommandRunning.clear();
+    getmoreCommandRunning.clear();
+  }
+
+  @Nullable
+  private RunningDurationMetric runningCommands(final String commandName) {
+    if ("getMore".equals(commandName)) {
+      return getmoreCommandRunning;
+    } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
+      return initialCommandRunning;
+    }
+    return null;
   }
 
   public Metric getRecords() {
@@ -332,14 +364,6 @@ public class SourceTaskStatistics extends MongoMBean {
 
   public Metric getGetmoreCommandsSocketError() {
     return getmoreCommandsSocketError;
-  }
-
-  public RunningDurationMetric getInitialCommandRunning() {
-    return initialCommandRunning;
-  }
-
-  public RunningDurationMetric getGetmoreCommandRunning() {
-    return getmoreCommandRunning;
   }
 
 

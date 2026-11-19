@@ -25,7 +25,6 @@ import com.mongodb.annotations.ThreadSafe;
 import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
 import com.mongodb.kafka.connect.util.jmx.internal.CombinedMongoMBean;
 import com.mongodb.kafka.connect.util.jmx.internal.MBeanServerUtils;
-import com.mongodb.kafka.connect.util.jmx.internal.RunningDurationMetric;
 import com.mongodb.kafka.connect.util.jmx.internal.TaskStateDndMBean;
 
 @ThreadSafe
@@ -38,20 +37,11 @@ public final class JmxStatisticsManager implements StatisticsManager {
   private final SourceTaskStatistics streamStatistics;
   private final CombinedMongoMBean combinedStatistics;
   private final TaskStateDndMBean dndMBean;
-  // Shared so that a command that starts before switchToStreamStatistics() still finishes.
-  private final RunningDurationMetric initialCommandRunning =
-      SourceTaskStatistics.newInitialCommandRunning();
-  private final RunningDurationMetric getmoreCommandRunning =
-      SourceTaskStatistics.newGetmoreCommandRunning();
   private volatile SourceTaskStatistics currentStatistics;
 
   public JmxStatisticsManager(final boolean startWithCopyStatistics, final String connectorName) {
-    copyStatistics =
-        new SourceTaskStatistics(
-            getMBeanName(COPY_BEAN, connectorName), initialCommandRunning, getmoreCommandRunning);
-    streamStatistics =
-        new SourceTaskStatistics(
-            getMBeanName(STREAM_BEAN, connectorName), initialCommandRunning, getmoreCommandRunning);
+    copyStatistics = new SourceTaskStatistics(getMBeanName(COPY_BEAN, connectorName));
+    streamStatistics = new SourceTaskStatistics(getMBeanName(STREAM_BEAN, connectorName));
     combinedStatistics =
         new CombinedMongoMBean(
             getMBeanName(COMBINED_BEAN, connectorName), copyStatistics, streamStatistics);
@@ -74,6 +64,13 @@ public final class JmxStatisticsManager implements StatisticsManager {
   }
 
   @Override
+  public void commandFinished(final String commandName, final int requestId) {
+    // Request ids are unique, so finishing in the statistics that did not start it does nothing.
+    copyStatistics.commandFinished(commandName, requestId);
+    streamStatistics.commandFinished(commandName, requestId);
+  }
+
+  @Override
   public void setDNDTask(final boolean exempt) {
     dndMBean.setDnd(exempt);
   }
@@ -84,8 +81,8 @@ public final class JmxStatisticsManager implements StatisticsManager {
     streamStatistics.unregister();
     combinedStatistics.unregister();
     dndMBean.unregister();
-    initialCommandRunning.clear();
-    getmoreCommandRunning.clear();
+    copyStatistics.clearRunningCommands();
+    streamStatistics.clearRunningCommands();
   }
 
   private static String getMBeanName(final String mBean, final String connectorName) {
