@@ -27,7 +27,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import javax.management.Attribute;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
@@ -137,6 +136,18 @@ public class CombinedMongoMBeanTest {
   }
 
   private static long value(final Object attribute) {
-    return (Long) ((Attribute) attribute).getValue();
+    return (Long) attribute;
+  }
+
+  @Test
+  @DisplayName("getAttribute returns the value itself, as JMX exporters expect")
+  void testGetAttributeReturnsTheValue() throws Exception {
+    MongoMBean bean1 = new MongoMBean("name1");
+    bean1.registerTotal("total").sample(3);
+    MongoMBean bean2 = new MongoMBean("name2");
+    bean2.registerTotal("total").sample(2);
+
+    assertEquals(3L, bean1.getAttribute("total"));
+    assertEquals(5L, new CombinedMongoMBean("combined", bean1, bean2).getAttribute("total"));
   }
 }

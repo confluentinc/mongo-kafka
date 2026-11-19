@@ -23,7 +23,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import javax.management.Attribute;
 
 import org.bson.BsonDocument;
 import org.bson.BsonInt32;
@@ -220,7 +219,7 @@ class MongoSourceTaskCommandMetricsTest {
 
   private static long value(final SourceTaskStatistics statistics, final String name)
       throws Exception {
-    return (Long) ((Attribute) statistics.getAttribute(name)).getValue();
+    return (Long) statistics.getAttribute(name);
   }
 
   /** Copy and stream statistics on a test clock, finishing commands the way the JMX one does. */

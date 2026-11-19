@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
-import javax.management.Attribute;
 import javax.management.MBeanAttributeInfo;
 
 import org.junit.jupiter.api.DisplayName;
@@ -70,6 +69,6 @@ class SourceTaskStatisticsTest {
 
   private static long value(final SourceTaskStatistics statistics, final String name)
       throws Exception {
-    return (Long) ((Attribute) statistics.getAttribute(name)).getValue();
+    return (Long) statistics.getAttribute(name);
   }
 }

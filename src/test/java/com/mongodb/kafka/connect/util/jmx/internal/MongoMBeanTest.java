@@ -211,10 +211,11 @@ public class MongoMBeanTest {
             .map(
                 name -> {
                   try {
-                    Attribute value1 = (Attribute) bean.getAttribute(name);
+                    Long value1 = (Long) bean.getAttribute(name);
                     Attribute value2 = (Attribute) bean.getAttributes(new String[] {name}).get(0);
-                    assertEquals(value1, value2);
-                    return (Long) value1.getValue();
+                    assertEquals(name, value2.getName());
+                    assertEquals(value1, value2.getValue());
+                    return value1;
                   } catch (AttributeNotFoundException | MBeanException | ReflectionException e) {
                     throw new RuntimeException(e);
                   }

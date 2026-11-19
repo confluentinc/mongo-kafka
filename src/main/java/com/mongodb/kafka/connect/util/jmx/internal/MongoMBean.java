@@ -97,7 +97,9 @@ public class MongoMBean implements DynamicMBean {
   @Override
   public Object getAttribute(final String name) throws AttributeNotFoundException {
     if (metricsMap.containsKey(name)) {
-      return new Attribute(name, metricsMap.get(name).get());
+      // DynamicMBean.getAttribute returns the value itself, not an Attribute. JMX exporters such
+      // as the OpenTelemetry agent drop a value they cannot read as a number.
+      return metricsMap.get(name).get();
     } else {
       throw new AttributeNotFoundException("getAttribute failed: value not found for: " + name);
     }
