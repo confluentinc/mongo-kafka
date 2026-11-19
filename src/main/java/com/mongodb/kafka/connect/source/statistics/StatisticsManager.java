@@ -27,6 +27,12 @@ public interface StatisticsManager extends AutoCloseable {
 
   void switchToStreamStatistics();
 
+  /**
+   * Records that a command succeeded or failed, in whichever statistics it started. A command can
+   * start before {@link #switchToStreamStatistics()} and finish after it.
+   */
+  void commandFinished(String commandName, int requestId);
+
   void setDNDTask(boolean exempt);
 
   void close();
