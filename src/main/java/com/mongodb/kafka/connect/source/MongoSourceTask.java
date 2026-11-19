@@ -39,10 +39,13 @@ import org.slf4j.LoggerFactory;
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCommandException;
+import com.mongodb.MongoSocketException;
+import com.mongodb.MongoSocketReadTimeoutException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.event.CommandFailedEvent;
 import com.mongodb.event.CommandListener;
+import com.mongodb.event.CommandStartedEvent;
 import com.mongodb.event.CommandSucceededEvent;
 
 import com.mongodb.kafka.connect.Versions;
@@ -122,24 +125,10 @@ public final class MongoSourceTask extends SourceTask {
       if (shouldCopyData) {
         statisticsManager.setDNDTask(true);
       }
-      StatisticsManager statsManager = statisticsManager;
-      CommandListener statisticsCommandListener =
-          new CommandListener() {
-            @Override
-            public void commandSucceeded(final CommandSucceededEvent event) {
-              mongoCommandSucceeded(event, statsManager.currentStatistics());
-            }
-
-            @Override
-            public void commandFailed(final CommandFailedEvent event) {
-              mongoCommandFailed(event, statsManager.currentStatistics());
-            }
-          };
-
       MongoClientSettings.Builder builder =
           MongoClientSettings.builder()
               .applyConnectionString(sourceConfig.getConnectionString())
-              .addCommandListener(statisticsCommandListener)
+              .addCommandListener(statisticsCommandListener(statisticsManager))
               .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sourceConfig));
 
       if (sourceConfig.getCustomCredentialProvider() != null) {
@@ -254,6 +243,31 @@ public final class MongoSourceTask extends SourceTask {
   }
 
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  static CommandListener statisticsCommandListener(final StatisticsManager statisticsManager) {
+    return new CommandListener() {
+      @Override
+      public void commandStarted(final CommandStartedEvent event) {
+        statisticsManager
+            .currentStatistics()
+            .commandStarted(event.getCommandName(), event.getRequestId());
+      }
+
+      @Override
+      public void commandSucceeded(final CommandSucceededEvent event) {
+        statisticsManager.commandFinished(event.getCommandName(), event.getRequestId());
+        mongoCommandSucceeded(event, statisticsManager.currentStatistics());
+      }
+
+      @Override
+      public void commandFailed(final CommandFailedEvent event) {
+        // Every failure stops counting as running, including the ones mongoCommandFailed ignores.
+        statisticsManager.commandFinished(event.getCommandName(), event.getRequestId());
+        mongoCommandFailed(event, statisticsManager.currentStatistics());
+      }
+    };
+  }
+
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
   static void mongoCommandSucceeded(
       final CommandSucceededEvent event, final SourceTaskStatistics currentStatistics) {
     String commandName = event.getCommandName();
@@ -279,10 +293,24 @@ public final class MongoSourceTask extends SourceTask {
     }
     String commandName = event.getCommandName();
     long elapsedTimeMs = event.getElapsedTime(TimeUnit.MILLISECONDS);
+    // A read timeout is also a MongoSocketException, so check it first: each failure is counted as
+    // one or the other, never both.
+    boolean readTimeout = e instanceof MongoSocketReadTimeoutException;
+    boolean socketError = !readTimeout && e instanceof MongoSocketException;
     if ("getMore".equals(commandName)) {
       currentStatistics.getGetmoreCommandsFailed().sample(elapsedTimeMs);
+      if (readTimeout) {
+        currentStatistics.getGetmoreCommandsReadTimeout().sample(1);
+      } else if (socketError) {
+        currentStatistics.getGetmoreCommandsSocketError().sample(1);
+      }
     } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
       currentStatistics.getInitialCommandsFailed().sample(elapsedTimeMs);
+      if (readTimeout) {
+        currentStatistics.getInitialCommandsReadTimeout().sample(1);
+      } else if (socketError) {
+        currentStatistics.getInitialCommandsSocketError().sample(1);
+      }
     }
   }
 }

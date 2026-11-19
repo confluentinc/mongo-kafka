@@ -23,13 +23,18 @@ import java.lang.management.ManagementFactory;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import javax.management.Attribute;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
 
 public class CombinedMongoMBeanTest {
   private List<Long> asList(final Number... n) {
@@ -94,5 +99,44 @@ public class CombinedMongoMBeanTest {
     assertEquals(asList(3, 3, 1, 3, 1, 0, 0, 0, 0), bean1Supplier.get());
     assertEquals(asList(2, 2, 1, 2, 1, 0, 0, 0, 0), bean2Supplier.get());
     assertEquals(asList(5, 2, 2, 5, 2, 0, 0, 0, 0), bean3Supplier.get());
+  }
+
+  @Test
+  @DisplayName("The combined running duration is the oldest command running in either phase")
+  void testRunningDurationCombinesAsMax() throws Exception {
+    AtomicLong nanos = new AtomicLong(1_000_000_000L);
+    String initialName = "initial-command-running-duration-ms";
+    String getmoreName = "getmore-command-running-duration-ms";
+    SourceTaskStatistics copy =
+        new SourceTaskStatistics(
+            "copy",
+            new RunningDurationMetric(initialName, nanos::get),
+            new RunningDurationMetric(getmoreName, nanos::get));
+    SourceTaskStatistics stream =
+        new SourceTaskStatistics(
+            "stream",
+            new RunningDurationMetric(initialName, nanos::get),
+            new RunningDurationMetric(getmoreName, nanos::get));
+    CombinedMongoMBean combined = new CombinedMongoMBean("combined", copy, stream);
+
+    // A copy-phase command is visible on the combined bean although the stream bean reads 0.
+    copy.commandStarted("aggregate", 1);
+    nanos.addAndGet(TimeUnit.SECONDS.toNanos(60));
+    stream.commandStarted("aggregate", 2);
+    stream.commandStarted("getMore", 3);
+    nanos.addAndGet(TimeUnit.SECONDS.toNanos(1));
+
+    assertEquals(61_000L, value(copy.getAttribute(initialName)));
+    assertEquals(1_000L, value(stream.getAttribute(initialName)));
+    assertEquals(61_000L, value(combined.getAttribute(initialName)));
+    assertEquals(0L, value(copy.getAttribute(getmoreName)));
+    assertEquals(1_000L, value(combined.getAttribute(getmoreName)));
+
+    copy.commandFinished("aggregate", 1);
+    assertEquals(1_000L, value(combined.getAttribute(initialName)));
+  }
+
+  private static long value(final Object attribute) {
+    return (Long) ((Attribute) attribute).getValue();
   }
 }
