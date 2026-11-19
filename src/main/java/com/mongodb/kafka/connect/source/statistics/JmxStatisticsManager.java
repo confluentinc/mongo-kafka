@@ -25,6 +25,7 @@ import com.mongodb.annotations.ThreadSafe;
 import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
 import com.mongodb.kafka.connect.util.jmx.internal.CombinedMongoMBean;
 import com.mongodb.kafka.connect.util.jmx.internal.MBeanServerUtils;
+import com.mongodb.kafka.connect.util.jmx.internal.RunningDurationMetric;
 import com.mongodb.kafka.connect.util.jmx.internal.TaskStateDndMBean;
 
 @ThreadSafe
@@ -37,11 +38,20 @@ public final class JmxStatisticsManager implements StatisticsManager {
   private final SourceTaskStatistics streamStatistics;
   private final CombinedMongoMBean combinedStatistics;
   private final TaskStateDndMBean dndMBean;
+  // Shared so that a command that starts before switchToStreamStatistics() still finishes.
+  private final RunningDurationMetric initialCommandRunning =
+      SourceTaskStatistics.newInitialCommandRunning();
+  private final RunningDurationMetric getmoreCommandRunning =
+      SourceTaskStatistics.newGetmoreCommandRunning();
   private volatile SourceTaskStatistics currentStatistics;
 
   public JmxStatisticsManager(final boolean startWithCopyStatistics, final String connectorName) {
-    copyStatistics = new SourceTaskStatistics(getMBeanName(COPY_BEAN, connectorName));
-    streamStatistics = new SourceTaskStatistics(getMBeanName(STREAM_BEAN, connectorName));
+    copyStatistics =
+        new SourceTaskStatistics(
+            getMBeanName(COPY_BEAN, connectorName), initialCommandRunning, getmoreCommandRunning);
+    streamStatistics =
+        new SourceTaskStatistics(
+            getMBeanName(STREAM_BEAN, connectorName), initialCommandRunning, getmoreCommandRunning);
     combinedStatistics =
         new CombinedMongoMBean(
             getMBeanName(COMBINED_BEAN, connectorName), copyStatistics, streamStatistics);
@@ -74,6 +84,8 @@ public final class JmxStatisticsManager implements StatisticsManager {
     streamStatistics.unregister();
     combinedStatistics.unregister();
     dndMBean.unregister();
+    initialCommandRunning.clear();
+    getmoreCommandRunning.clear();
   }
 
   private static String getMBeanName(final String mBean, final String connectorName) {

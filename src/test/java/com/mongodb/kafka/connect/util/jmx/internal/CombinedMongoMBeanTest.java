@@ -23,13 +23,18 @@ import java.lang.management.ManagementFactory;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import javax.management.Attribute;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
 
 public class CombinedMongoMBeanTest {
   private List<Long> asList(final Number... n) {
@@ -94,5 +99,38 @@ public class CombinedMongoMBeanTest {
     assertEquals(asList(3, 3, 1, 3, 1, 0, 0, 0, 0), bean1Supplier.get());
     assertEquals(asList(2, 2, 1, 2, 1, 0, 0, 0, 0), bean2Supplier.get());
     assertEquals(asList(5, 2, 2, 5, 2, 0, 0, 0, 0), bean3Supplier.get());
+  }
+
+  @Test
+  @DisplayName("A running command shared by the copy and stream beans is not doubled when combined")
+  void testRunningDurationIsNotDoubledWhenCombined() throws Exception {
+    AtomicLong nanos = new AtomicLong(1_000_000_000L);
+    RunningDurationMetric initial =
+        new RunningDurationMetric("initial-command-running-duration-ms", nanos::get);
+    RunningDurationMetric getmore =
+        new RunningDurationMetric("getmore-command-running-duration-ms", nanos::get);
+    SourceTaskStatistics copy = new SourceTaskStatistics("copy", initial, getmore);
+    SourceTaskStatistics stream = new SourceTaskStatistics("stream", initial, getmore);
+    CombinedMongoMBean combined = new CombinedMongoMBean("combined", copy, stream);
+
+    initial.start(1);
+    getmore.start(2);
+    nanos.addAndGet(TimeUnit.SECONDS.toNanos(61));
+
+    for (String name :
+        Arrays.asList(
+            "initial-command-running-duration-ms", "getmore-command-running-duration-ms")) {
+      assertEquals(61_000L, value(copy.getAttribute(name)));
+      assertEquals(61_000L, value(stream.getAttribute(name)));
+      assertEquals(61_000L, value(combined.getAttribute(name)));
+    }
+
+    initial.finish(1);
+    assertEquals(0L, value(combined.getAttribute("initial-command-running-duration-ms")));
+    assertEquals(61_000L, value(combined.getAttribute("getmore-command-running-duration-ms")));
+  }
+
+  private static long value(final Object attribute) {
+    return (Long) ((Attribute) attribute).getValue();
   }
 }
