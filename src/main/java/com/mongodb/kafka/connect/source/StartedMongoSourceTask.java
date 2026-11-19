@@ -397,10 +397,11 @@ final class StartedMongoSourceTask implements AutoCloseable {
   private void initializeCursorAndHeartbeatManager() {
     long startMs = time.milliseconds();
     cursor = createCursor(sourceConfig, mongoClient);
-    // Opening or resuming a change stream can take from milliseconds to many minutes.
+    // Opening or resuming a change stream can take from milliseconds to many minutes. The cursor
+    // is null only when the namespace does not exist yet; every other failure throws.
     LOGGER.debug(
         "{} the change stream cursor in {} ms",
-        cursor == null ? "Failed to open" : "Opened",
+        cursor == null ? "Did not open (namespace not found)" : "Opened",
         time.milliseconds() - startMs);
     heartbeatManager =
         new HeartbeatManager(
@@ -642,8 +643,9 @@ final class StartedMongoSourceTask implements AutoCloseable {
           batch.add(next);
         }
       } while (next != null && batch.size() < maxBatchSize && cursor.available() > 0);
-      if (LOGGER.isDebugEnabled()) {
-        // Counts and sizes only: the documents themselves are customer data.
+      if (!batch.isEmpty() && LOGGER.isDebugEnabled()) {
+        // Counts and sizes only: the documents themselves are customer data. Empty polls are not
+        // logged. The read time includes the cursor's await time (poll.await.time.ms).
         LOGGER.debug(
             "Read {} change stream event(s), {} KB, from the cursor in {} ms",
             batch.size(),

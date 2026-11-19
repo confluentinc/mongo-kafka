@@ -28,7 +28,8 @@ import java.util.function.LongSupplier;
  * slow or hung command while it is still running.
  *
  * <p>Commands are tracked by their driver request id with {@link #start} and {@link #finish}. The
- * driver reports every started command as either succeeded or failed, so each start is finished.
+ * driver reports every started command as either succeeded or failed, so each start is finished,
+ * unless the client closes while the command runs; {@link #clear} covers that case.
  */
 public final class RunningDurationMetric implements Metric {
   private final String name;
@@ -50,6 +51,14 @@ public final class RunningDurationMetric implements Metric {
 
   public void finish(final int requestId) {
     startNanosByRequestId.remove(requestId);
+  }
+
+  /**
+   * Forgets every running command. A command still running when its client closes may never be
+   * reported as finished, so this is called when the task's statistics are closed.
+   */
+  public void clear() {
+    startNanosByRequestId.clear();
   }
 
   long runningMs() {

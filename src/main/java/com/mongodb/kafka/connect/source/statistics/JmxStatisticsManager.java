@@ -38,12 +38,14 @@ public final class JmxStatisticsManager implements StatisticsManager {
   private final SourceTaskStatistics streamStatistics;
   private final CombinedMongoMBean combinedStatistics;
   private final TaskStateDndMBean dndMBean;
+  // Shared so that a command that starts before switchToStreamStatistics() still finishes.
+  private final RunningDurationMetric initialCommandRunning =
+      SourceTaskStatistics.newInitialCommandRunning();
+  private final RunningDurationMetric getmoreCommandRunning =
+      SourceTaskStatistics.newGetmoreCommandRunning();
   private volatile SourceTaskStatistics currentStatistics;
 
   public JmxStatisticsManager(final boolean startWithCopyStatistics, final String connectorName) {
-    // Shared so that a command that starts before switchToStreamStatistics() still finishes.
-    RunningDurationMetric initialCommandRunning = SourceTaskStatistics.newInitialCommandRunning();
-    RunningDurationMetric getmoreCommandRunning = SourceTaskStatistics.newGetmoreCommandRunning();
     copyStatistics =
         new SourceTaskStatistics(
             getMBeanName(COPY_BEAN, connectorName), initialCommandRunning, getmoreCommandRunning);
@@ -82,6 +84,8 @@ public final class JmxStatisticsManager implements StatisticsManager {
     streamStatistics.unregister();
     combinedStatistics.unregister();
     dndMBean.unregister();
+    initialCommandRunning.clear();
+    getmoreCommandRunning.clear();
   }
 
   private static String getMBeanName(final String mBean, final String connectorName) {

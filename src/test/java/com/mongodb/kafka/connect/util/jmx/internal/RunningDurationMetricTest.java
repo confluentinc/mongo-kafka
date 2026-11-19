@@ -63,6 +63,16 @@ class RunningDurationMetricTest {
   }
 
   @Test
+  @DisplayName("Clearing forgets commands that will never finish")
+  void testClear() {
+    metric.start(1);
+    metric.start(2);
+    advanceMs(30_000);
+    metric.clear();
+    assertEquals(0, metric.runningMs());
+  }
+
+  @Test
   @DisplayName("Emits its value under its name and does not accept samples")
   void testEmitAndSample() {
     metric.start(1);
