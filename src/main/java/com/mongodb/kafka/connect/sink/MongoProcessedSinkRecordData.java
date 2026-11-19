@@ -111,7 +111,7 @@ final class MongoProcessedSinkRecordData {
           sinkRecord.kafkaPartition(),
           sinkRecord.kafkaOffset(),
           e);
-      DataException sanitized = new DataException(e.getMessage());
+      DataException sanitized = new DataException(safeMessage(e));
       exception = sanitized;
       if (config.logErrors()) {
         LOGGER.error(
@@ -132,5 +132,40 @@ final class MongoProcessedSinkRecordData {
       }
     }
     return Optional.empty();
+  }
+
+  private static final String CONNECTOR_PACKAGE = "com.mongodb.kafka.connect.";
+  private static final int MAX_CAUSE_DEPTH = 10;
+
+  /**
+   * Builds an exception message that is safe to surface to Connect framework logs, the DLQ and
+   * error-mapping matching.
+   *
+   * <p>Walks the cause chain and keeps messages only from exceptions created by this connector's
+   * own code, whose throw sites interpolate metadata and configuration (field names, BSON types,
+   * topic/partition/offset) but not record content. The walk stops at the first exception created
+   * elsewhere (org.bson, the MongoDB driver, Kafka, Jackson, ...), whose message may echo record
+   * content, and records only its class name.
+   */
+  static String safeMessage(final Throwable e) {
+    StringBuilder sb = new StringBuilder();
+    Throwable current = e;
+    for (int depth = 0; current != null && depth < MAX_CAUSE_DEPTH; depth++) {
+      if (depth > 0) {
+        sb.append(" Caused by: ");
+      }
+      if (!isConnectorOwned(current)) {
+        sb.append(current.getClass().getName());
+        break;
+      }
+      sb.append(current.getMessage());
+      current = current.getCause() == current ? null : current.getCause();
+    }
+    return sb.toString();
+  }
+
+  private static boolean isConnectorOwned(final Throwable t) {
+    StackTraceElement[] frames = t.getStackTrace();
+    return frames.length > 0 && frames[0].getClassName().startsWith(CONNECTOR_PACKAGE);
   }
 }
