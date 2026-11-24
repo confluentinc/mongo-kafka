@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.ByteBuffer;
 import java.util.stream.Stream;
 
 import org.apache.kafka.connect.data.Schema;
@@ -39,6 +40,9 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import org.bson.BsonDocument;
+import org.bson.BsonString;
+import org.bson.RawBsonDocument;
+import org.bson.codecs.BsonDocumentCodec;
 
 /**
  * CC-47055: every failure surfaced by {@code MongoProcessedSinkRecordData.tryProcess} must (a) never
@@ -75,6 +79,13 @@ class MongoProcessedSinkRecordDataSafeMessageTest {
   private static final String FIELD_PATH_MAPPER_CONFIG =
       format(
           "{'namespace.mapper': '%s', 'namespace.mapper.value.collection.field': 'coll',"
+              + " 'namespace.mapper.error.if.invalid': 'true'}",
+          FIELD_PATH_MAPPER);
+
+  private static final String FIELD_PATH_MAPPER_DB_CONFIG =
+      format(
+          "{'namespace.mapper': '%s', 'namespace.mapper.value.database.field': 'db',"
+              + " 'namespace.mapper.value.collection.field': 'coll',"
               + " 'namespace.mapper.error.if.invalid': 'true'}",
           FIELD_PATH_MAPPER);
 
@@ -144,7 +155,26 @@ class MongoProcessedSinkRecordDataSafeMessageTest {
             "namespace: empty collection name (driver message kept, mapping 13145)",
             record("{_id: 1}", format("{coll: '', secret: '%s'}", CANARY)),
             FIELD_PATH_MAPPER_CONFIG,
-            new String[] {"state should be: collectionName is not empty"}),
+            new String[] {
+              "java.lang.IllegalArgumentException: state should be: collectionName is not empty"
+            }),
+        Arguments.of(
+            "namespace: database name with a prohibited character (mapping 1395)",
+            record("{_id: 1}", format("{db: 'a.b', coll: 'c', secret: '%s'}", CANARY)),
+            FIELD_PATH_MAPPER_DB_CONFIG,
+            new String[] {
+              "java.lang.IllegalArgumentException: state should be: databaseName does not contain"
+                  + " '.'"
+            }),
+        Arguments.of(
+            "value: malformed BSON bytes (mapping 588)",
+            new SinkRecord(TEST_TOPIC, 1, null, null, null, malformedBson(), 20),
+            "{}",
+            new String[] {
+              "Could not convert value",
+              "org.bson.BsonSerializationException: Found a BSON string that is not"
+                  + " null-terminated"
+            }),
         Arguments.of(
             "namespace: value not JSON",
             record("{_id: 1}", "not json " + CANARY),
@@ -247,7 +277,7 @@ class MongoProcessedSinkRecordDataSafeMessageTest {
   void mappedThirdPartyMessageMustMatchExactly() {
     String exact = "state should be: collectionName is not empty";
     assertEquals(
-        "outer Caused by: " + exact,
+        "outer Caused by: java.lang.IllegalArgumentException: " + exact,
         MongoProcessedSinkRecordData.safeMessage(
             new DataException("outer", thirdParty(new IllegalArgumentException(exact)))));
     assertEquals(
@@ -255,6 +285,18 @@ class MongoProcessedSinkRecordDataSafeMessageTest {
         MongoProcessedSinkRecordData.safeMessage(
             new DataException(
                 "outer", thirdParty(new IllegalArgumentException(exact + " " + CANARY)))));
+  }
+
+  /** BSON bytes for {"s": CANARY} with the string's null terminator overwritten. */
+  private static byte[] malformedBson() {
+    ByteBuffer buffer =
+        new RawBsonDocument(new BsonDocument("s", new BsonString(CANARY)), new BsonDocumentCodec())
+            .getByteBuffer()
+            .asNIO();
+    byte[] bytes = new byte[buffer.remaining()];
+    buffer.get(bytes);
+    bytes[bytes.length - 2] = 'X';
+    return bytes;
   }
 
   /** Gives {@code e} a top frame outside the connector package, like a driver/bson throw site. */

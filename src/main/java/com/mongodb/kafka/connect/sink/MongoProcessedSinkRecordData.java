@@ -16,6 +16,7 @@
 
 package com.mongodb.kafka.connect.sink;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Optional;
@@ -141,15 +142,39 @@ final class MongoProcessedSinkRecordData {
   private static final int MAX_CAUSE_DEPTH = 10;
 
   /**
-   * Exact, constant messages of driver/bson exceptions that error mappings match on. Only add
-   * fixed strings here, never a prefix or pattern: anything else from third-party code may echo
-   * record content.
+   * Exact messages of driver/bson exceptions that are safe to surface: each is a fixed string, or
+   * is built only from a fixed set of values, never from record content.
+   * Matching is by exact equality, so no other third-party message can pass, whatever the driver
+   * version. Never add a prefix, pattern or message that interpolates a value from the record.
    */
-  private static final Set<String> MAPPED_THIRD_PARTY_MESSAGES =
-      new HashSet<>(
-          Collections.singletonList(
-              // driver MongoNamespace.checkCollectionNameValidity; mapping 13145
-              "state should be: collectionName is not empty"));
+  private static final Set<String> SAFE_THIRD_PARTY_MESSAGES = buildSafeThirdPartyMessages();
+
+  private static Set<String> buildSafeThirdPartyMessages() {
+    Set<String> messages =
+        new HashSet<>(
+            Arrays.asList(
+                // driver MongoNamespace, reached through the namespace mappers; mappings 13145,
+                // 12339
+                "state should be: collectionName is not empty",
+                "state should be: databaseName is not empty",
+                "collectionName can not be null",
+                "databaseName can not be null",
+                "fullName can not be null",
+                // driver write models, built by the write-model strategies and CDC handlers
+                "filter can not be null",
+                "update can not be null",
+                "replacement can not be null",
+                "document can not be null",
+                "options can not be null",
+                // bson ByteBufferBsonInput, malformed BSON bytes; mapping 588
+                "Found a BSON string that is not null-terminated"));
+    // driver MongoNamespace.checkDatabaseNameValidity; mapping 1395. The quoted character is one
+    // of this fixed set of prohibited characters.
+    for (char c : new char[] {'\0', '/', '\\', ' ', '"', '.'}) {
+      messages.add("state should be: databaseName does not contain '" + c + "'");
+    }
+    return Collections.unmodifiableSet(messages);
+  }
 
   /**
    * Builds an exception message that is safe to surface to Connect framework logs, the DLQ and
@@ -159,8 +184,9 @@ final class MongoProcessedSinkRecordData {
    * own code, whose throw sites interpolate metadata and configuration (field names, BSON types,
    * topic/partition/offset) but not record content. The walk stops at the first exception created
    * elsewhere (org.bson, the MongoDB driver, Kafka, Jackson, ...), whose message may echo record
-   * content, and records only its class name, unless its message is one of {@link
-   * #MAPPED_THIRD_PARTY_MESSAGES}.
+   * content, and records only its class name. If its message is one of {@link
+   * #SAFE_THIRD_PARTY_MESSAGES}, the walk records "class: message" instead and continues, so error
+   * mappings written against the original exception text still match.
    */
   static String safeMessage(final Throwable e) {
     StringBuilder sb = new StringBuilder();
@@ -169,12 +195,14 @@ final class MongoProcessedSinkRecordData {
       if (depth > 0) {
         sb.append(" Caused by: ");
       }
-      if (!isConnectorOwned(current)
-          && !MAPPED_THIRD_PARTY_MESSAGES.contains(current.getMessage())) {
+      if (isConnectorOwned(current)) {
+        sb.append(current.getMessage());
+      } else if (SAFE_THIRD_PARTY_MESSAGES.contains(current.getMessage())) {
+        sb.append(current.getClass().getName()).append(": ").append(current.getMessage());
+      } else {
         sb.append(current.getClass().getName());
         break;
       }
-      sb.append(current.getMessage());
       current = current.getCause() == current ? null : current.getCause();
     }
     return sb.toString();
