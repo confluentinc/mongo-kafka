@@ -64,6 +64,9 @@ class MongoProcessedSinkRecordDataSafeMessageTest {
   private static final String DEBEZIUM_MONGO_HANDLER =
       "com.mongodb.kafka.connect.sink.cdc.debezium.mongodb.MongoDbHandler";
 
+  private static final String DELETE_WRITE_MODEL =
+      "Could not create write model for a tombstone record (delete.on.null.values=true)";
+
   private static final String DELETE_BY_KEY_CONFIG =
       format(
           "{'delete.on.null.values': 'true', 'document.id.strategy': '%s'}", PROVIDED_IN_KEY);
@@ -83,7 +86,7 @@ class MongoProcessedSinkRecordDataSafeMessageTest {
             record("not json " + CANARY, null),
             DELETE_BY_KEY_CONFIG,
             new String[] {
-              "Could not create write model",
+              DELETE_WRITE_MODEL,
               "Could not convert key",
               "org.bson.json.JsonParseException"
             }),
@@ -92,19 +95,19 @@ class MongoProcessedSinkRecordDataSafeMessageTest {
             record(format("{foo: '%s'}", CANARY), null),
             DELETE_BY_KEY_CONFIG,
             new String[] {
-              "Could not create write model",
+              DELETE_WRITE_MODEL,
               "Provided id strategy is used but the document structure either contained no _id"
             }),
         Arguments.of(
             "delete: key _id is null (mapping 868)",
             record(format("{_id: null, foo: '%s'}", CANARY), null),
             DELETE_BY_KEY_CONFIG,
-            new String[] {"Could not create write model", "an _id of type BsonNull"}),
+            new String[] {DELETE_WRITE_MODEL, "an _id of type BsonNull"}),
         Arguments.of(
             "delete: key is a JSON array, not a document",
             record(format("['%s']", CANARY), null),
             DELETE_BY_KEY_CONFIG,
-            new String[] {"Could not create write model", "Could not convert key"}),
+            new String[] {DELETE_WRITE_MODEL, "Could not convert key"}),
 
         // --- Value path (WriteModelStrategyHelper.createValueWriteModel + post processors) ---
         Arguments.of(
@@ -137,6 +140,11 @@ class MongoProcessedSinkRecordDataSafeMessageTest {
             record("{_id: 1}", format("{coll: {nested: '%s'}}", CANARY)),
             FIELD_PATH_MAPPER_CONFIG,
             new String[] {"Invalid type for DOCUMENT field path 'coll'"}),
+        Arguments.of(
+            "namespace: empty collection name (driver message kept, mapping 13145)",
+            record("{_id: 1}", format("{coll: '', secret: '%s'}", CANARY)),
+            FIELD_PATH_MAPPER_CONFIG,
+            new String[] {"state should be: collectionName is not empty"}),
         Arguments.of(
             "namespace: value not JSON",
             record("{_id: 1}", "not json " + CANARY),
@@ -232,6 +240,30 @@ class MongoProcessedSinkRecordDataSafeMessageTest {
     String msg = MongoProcessedSinkRecordData.safeMessage(new DataException("outer", noTrace));
     assertFalse(msg.contains(CANARY), msg);
     assertTrue(msg.startsWith("outer Caused by: "), msg);
+  }
+
+  @Test
+  @DisplayName("only exact mapped third-party messages are kept")
+  void mappedThirdPartyMessageMustMatchExactly() {
+    String exact = "state should be: collectionName is not empty";
+    assertEquals(
+        "outer Caused by: " + exact,
+        MongoProcessedSinkRecordData.safeMessage(
+            new DataException("outer", thirdParty(new IllegalArgumentException(exact)))));
+    assertEquals(
+        "outer Caused by: java.lang.IllegalArgumentException",
+        MongoProcessedSinkRecordData.safeMessage(
+            new DataException(
+                "outer", thirdParty(new IllegalArgumentException(exact + " " + CANARY)))));
+  }
+
+  /** Gives {@code e} a top frame outside the connector package, like a driver/bson throw site. */
+  private static <T extends Throwable> T thirdParty(final T e) {
+    e.setStackTrace(
+        new StackTraceElement[] {
+          new StackTraceElement("com.mongodb.MongoNamespace", "check", "MongoNamespace.java", 1)
+        });
+    return e;
   }
 
   @Test
