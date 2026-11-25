@@ -64,6 +64,13 @@ public final class JmxStatisticsManager implements StatisticsManager {
   }
 
   @Override
+  public void commandFinished(final String commandName, final int requestId) {
+    // Request ids are unique, so finishing in the statistics that did not start it does nothing.
+    copyStatistics.commandFinished(commandName, requestId);
+    streamStatistics.commandFinished(commandName, requestId);
+  }
+
+  @Override
   public void setDNDTask(final boolean exempt) {
     dndMBean.setDnd(exempt);
   }
@@ -74,6 +81,8 @@ public final class JmxStatisticsManager implements StatisticsManager {
     streamStatistics.unregister();
     combinedStatistics.unregister();
     dndMBean.unregister();
+    copyStatistics.clearRunningCommands();
+    streamStatistics.clearRunningCommands();
   }
 
   private static String getMBeanName(final String mBean, final String connectorName) {

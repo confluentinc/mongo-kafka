@@ -17,13 +17,9 @@ package com.mongodb.kafka.connect.source;
 
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.COLLECTION_CONFIG;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.DATABASE_CONFIG;
-import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME_MS_CONFIG;
-import static com.mongodb.kafka.connect.source.MongoSourceConfig.POLL_AWAIT_TIME_MS_MAX;
 import static com.mongodb.kafka.connect.source.MongoSourceConfig.PROVIDER_CONFIG;
-import static com.mongodb.kafka.connect.source.MongoSourceExceptions.safeErrorDetail;
 import static com.mongodb.kafka.connect.util.Assertions.assertNotNull;
 import static com.mongodb.kafka.connect.util.ConfigHelper.getMongoDriverInformation;
-import static com.mongodb.kafka.connect.util.MongoClientHelper.applyReadTimeout;
 import static com.mongodb.kafka.connect.util.ServerApiConfig.setServerApi;
 import static com.mongodb.kafka.connect.util.SslConfigs.setupSsl;
 import static java.util.Collections.singletonMap;
@@ -49,6 +45,7 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.event.CommandFailedEvent;
 import com.mongodb.event.CommandListener;
+import com.mongodb.event.CommandStartedEvent;
 import com.mongodb.event.CommandSucceededEvent;
 
 import com.mongodb.kafka.connect.Versions;
@@ -93,23 +90,6 @@ import com.mongodb.kafka.connect.util.jmx.SourceTaskStatistics;
  */
 public final class MongoSourceTask extends SourceTask {
   static final Logger LOGGER = LoggerFactory.getLogger(MongoSourceTask.class);
-  /**
-   * Added to {@code poll.await.time.ms} to get the socket read timeout. The margin is an estimate:
-   * a {@code getMore} that is slow but still working (a selective pipeline on a busy cluster, {@code
-   * fullDocument=updateLookup}, resuming from an old token) can exceed it, and the driver then
-   * resumes from the same token and repeats the same work. Raise {@code poll.await.time.ms} or set
-   * {@code socketTimeoutMS} in the connection string to allow more time, up to {@link
-   * #MAX_READ_TIMEOUT_MS}.
-   */
-  private static final int READ_TIMEOUT_MARGIN_MS = 15_000;
-
-  /**
-   * The largest read timeout the streaming client can have: what {@code poll.await.time.ms} at its
-   * maximum produces. A {@code socketTimeoutMS} of {@code 0} or above this in the connection string
-   * is replaced by it, so no configuration leaves a hung connection blocking the task.
-   */
-  private static final int MAX_READ_TIMEOUT_MS =
-      Math.toIntExact(POLL_AWAIT_TIME_MS_MAX) + READ_TIMEOUT_MARGIN_MS;
   private static final String CONNECTOR_TYPE = "source";
   public static final String ID_FIELD = "_id";
   public static final String DOCUMENT_KEY_FIELD = "documentKey";
@@ -136,7 +116,6 @@ public final class MongoSourceTask extends SourceTask {
     LOGGER.info("Starting MongoDB source task");
     StatisticsManager statisticsManager = null;
     MongoClient mongoClient = null;
-    MongoClient copyMongoClient = null;
     MongoCopyDataManager copyDataManager = null;
     try {
       MongoSourceConfig sourceConfig = new MongoSourceConfig(props);
@@ -146,28 +125,26 @@ public final class MongoSourceTask extends SourceTask {
       if (shouldCopyData) {
         statisticsManager.setDNDTask(true);
       }
-      StatisticsManager statsManager = statisticsManager;
-      CommandListener statisticsCommandListener =
-          new CommandListener() {
-            @Override
-            public void commandSucceeded(final CommandSucceededEvent event) {
-              mongoCommandSucceeded(event, statsManager.currentStatistics());
-            }
+      MongoClientSettings.Builder builder =
+          MongoClientSettings.builder()
+              .applyConnectionString(sourceConfig.getConnectionString())
+              .addCommandListener(statisticsCommandListener(statisticsManager))
+              .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sourceConfig));
 
-            @Override
-            public void commandFailed(final CommandFailedEvent event) {
-              mongoCommandFailed(event, statsManager.currentStatistics());
-            }
-          };
-
-      mongoClient = createMongoClient(sourceConfig, statisticsCommandListener, true);
-      if (shouldCopyData) {
-        // Copying existing data can legitimately wait a long time for the first batch (for example a
-        // blocking pipeline stage on a large collection), so it must not be subject to the read
-        // timeout that bounds the change stream reads. The manager closes this client once done.
-        copyMongoClient = createMongoClient(sourceConfig, statisticsCommandListener, false);
-        copyDataManager = new MongoCopyDataManager(sourceConfig, copyMongoClient, true);
+      if (sourceConfig.getCustomCredentialProvider() != null) {
+        builder.credential(
+            sourceConfig
+                .getCustomCredentialProvider()
+                .getCustomCredential(sourceConfig.originals()));
       }
+
+      setServerApi(builder, sourceConfig);
+
+      mongoClient =
+          MongoClients.create(
+              builder.build(),
+              getMongoDriverInformation(CONNECTOR_TYPE, sourceConfig.getString(PROVIDER_CONFIG)));
+      copyDataManager = shouldCopyData ? new MongoCopyDataManager(sourceConfig, mongoClient) : null;
 
       startedTask =
           new StartedMongoSourceTask(
@@ -179,7 +156,6 @@ public final class MongoSourceTask extends SourceTask {
       //noinspection EmptyTryBlock
       try (StatisticsManager autoCloseableStatisticsManager = statisticsManager;
           MongoClient autoCloseableMongoClient = mongoClient;
-          MongoClient autoCloseableCopyMongoClient = copyMongoClient;
           MongoCopyDataManager autoCloseableCopyDataManager = copyDataManager) {
         // just using try-with-resources to ensure they all get closed, even in the case of
         // exceptions
@@ -189,40 +165,6 @@ public final class MongoSourceTask extends SourceTask {
       throw new ConnectException("Failed to start MongoDB source task", taskStartingException);
     }
     LOGGER.info("Started MongoDB source task");
-  }
-
-  private static MongoClient createMongoClient(
-      final MongoSourceConfig sourceConfig,
-      final CommandListener commandListener,
-      final boolean applyReadTimeout) {
-    MongoClientSettings.Builder builder =
-        MongoClientSettings.builder()
-            .applyConnectionString(sourceConfig.getConnectionString())
-            .addCommandListener(commandListener)
-            .applyToSslSettings(sslBuilder -> setupSsl(sslBuilder, sourceConfig));
-    if (applyReadTimeout) {
-      builder.applyToSocketSettings(
-          socketBuilder ->
-              applyReadTimeout(
-                  socketBuilder,
-                  sourceConfig.getConnectionString(),
-                  Math.toIntExact(sourceConfig.getLong(POLL_AWAIT_TIME_MS_CONFIG))
-                      + READ_TIMEOUT_MARGIN_MS,
-                  MAX_READ_TIMEOUT_MS));
-    }
-
-    if (sourceConfig.getCustomCredentialProvider() != null) {
-      builder.credential(
-          sourceConfig
-              .getCustomCredentialProvider()
-              .getCustomCredential(sourceConfig.originals()));
-    }
-
-    setServerApi(builder, sourceConfig);
-
-    return MongoClients.create(
-        builder.build(),
-        getMongoDriverInformation(CONNECTOR_TYPE, sourceConfig.getString(PROVIDER_CONFIG)));
   }
 
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
@@ -301,6 +243,31 @@ public final class MongoSourceTask extends SourceTask {
   }
 
   @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  static CommandListener statisticsCommandListener(final StatisticsManager statisticsManager) {
+    return new CommandListener() {
+      @Override
+      public void commandStarted(final CommandStartedEvent event) {
+        statisticsManager
+            .currentStatistics()
+            .commandStarted(event.getCommandName(), event.getRequestId());
+      }
+
+      @Override
+      public void commandSucceeded(final CommandSucceededEvent event) {
+        statisticsManager.commandFinished(event.getCommandName(), event.getRequestId());
+        mongoCommandSucceeded(event, statisticsManager.currentStatistics());
+      }
+
+      @Override
+      public void commandFailed(final CommandFailedEvent event) {
+        // Every failure stops counting as running, including the ones mongoCommandFailed ignores.
+        statisticsManager.commandFinished(event.getCommandName(), event.getRequestId());
+        mongoCommandFailed(event, statisticsManager.currentStatistics());
+      }
+    };
+  }
+
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
   static void mongoCommandSucceeded(
       final CommandSucceededEvent event, final SourceTaskStatistics currentStatistics) {
     String commandName = event.getCommandName();
@@ -326,26 +293,24 @@ public final class MongoSourceTask extends SourceTask {
     }
     String commandName = event.getCommandName();
     long elapsedTimeMs = event.getElapsedTime(TimeUnit.MILLISECONDS);
+    // A read timeout is also a MongoSocketException, so check it first: each failure is counted as
+    // one or the other, never both.
+    boolean readTimeout = e instanceof MongoSocketReadTimeoutException;
+    boolean socketError = !readTimeout && e instanceof MongoSocketException;
     if ("getMore".equals(commandName)) {
       currentStatistics.getGetmoreCommandsFailed().sample(elapsedTimeMs);
+      if (readTimeout) {
+        currentStatistics.getGetmoreCommandsReadTimeout().sample(1);
+      } else if (socketError) {
+        currentStatistics.getGetmoreCommandsSocketError().sample(1);
+      }
     } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
       currentStatistics.getInitialCommandsFailed().sample(elapsedTimeMs);
-    }
-    if (e instanceof MongoSocketException
-        && ("getMore".equals(commandName) || "aggregate".equals(commandName))) {
-      // The driver resumes the change stream after a network error without telling the task, so
-      // without this a repeating failure would not appear in the logs at all. The raw exception is
-      // not logged: its message can carry record-derived content.
-      LOGGER.warn(
-          "Command {} failed after {}ms: {}.{}",
-          commandName,
-          elapsedTimeMs,
-          safeErrorDetail(e),
-          e instanceof MongoSocketReadTimeoutException
-              ? " The server sent nothing before the socket read timeout. If this repeats, the"
-                  + " server may be slow to respond: consider raising `poll.await.time.ms` or"
-                  + " setting `socketTimeoutMS` in the connection string."
-              : "");
+      if (readTimeout) {
+        currentStatistics.getInitialCommandsReadTimeout().sample(1);
+      } else if (socketError) {
+        currentStatistics.getInitialCommandsSocketError().sample(1);
+      }
     }
   }
 }

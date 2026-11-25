@@ -20,6 +20,7 @@ package com.mongodb.kafka.connect.sink;
 
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.CONNECTION_URI_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.RETRY_MAX_ATTEMPTS_CONFIG;
+import static com.mongodb.kafka.connect.sink.MongoSinkConfig.SOCKET_READ_TIMEOUT_MS_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.TOPICS_REGEX_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.TOPIC_OVERRIDE_CONFIG;
 import static com.mongodb.kafka.connect.sink.MongoSinkConfig.createOverrideKey;
@@ -953,6 +954,22 @@ class MongoSinkConfigTest {
                 createSinkConfig(RETRY_MAX_ATTEMPTS_CONFIG, "3").getInt(RETRY_MAX_ATTEMPTS_CONFIG)),
         () -> assertInvalid(RETRY_MAX_ATTEMPTS_CONFIG, "0"),
         () -> assertInvalid(RETRY_MAX_ATTEMPTS_CONFIG, "-1"));
+  }
+
+  @Test
+  @DisplayName("test socket read timeout configuration")
+  void testSocketReadTimeoutConfigurations() {
+    assertAll(
+        "Socket read timeout configuration",
+        () -> assertEquals(90000, createSinkConfig().getInt(SOCKET_READ_TIMEOUT_MS_CONFIG)),
+        () ->
+            assertEquals(
+                180000,
+                createSinkConfig(SOCKET_READ_TIMEOUT_MS_CONFIG, "180000")
+                    .getInt(SOCKET_READ_TIMEOUT_MS_CONFIG)),
+        () -> assertInvalid(SOCKET_READ_TIMEOUT_MS_CONFIG, "0"),
+        () -> assertInvalid(SOCKET_READ_TIMEOUT_MS_CONFIG, "-1"),
+        () -> assertInvalid(SOCKET_READ_TIMEOUT_MS_CONFIG, "abc"));
   }
 
   private Exception assertInvalid(final String key, final String value) {

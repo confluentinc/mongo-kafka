@@ -29,6 +29,12 @@ import javax.management.MBeanInfo;
 
 public class MongoMBean implements DynamicMBean {
   protected static final long[] MS_LIMITS = new long[] {1, 10, 100, 1000, 10000};
+  /**
+   * {@link #MS_LIMITS} plus 1, 5 and 30 minutes, for MongoDB commands that can run for minutes (for
+   * example a change stream resuming from an old resume token).
+   */
+  protected static final long[] COMMAND_MS_LIMITS =
+      new long[] {1, 10, 100, 1000, 10000, 60000, 300000, 1800000};
 
   private String mBeanName;
   private final List<Metric> metrics = new ArrayList<>();
@@ -51,7 +57,11 @@ public class MongoMBean implements DynamicMBean {
   }
 
   protected AdditiveMetric registerMs(final String name) {
-    return register(new AdditiveMetric(name, "ms", MS_LIMITS));
+    return registerMs(name, MS_LIMITS);
+  }
+
+  protected AdditiveMetric registerMs(final String name, final long[] limits) {
+    return register(new AdditiveMetric(name, "ms", limits));
   }
 
   protected <T extends Metric> T register(final T m) {
@@ -87,7 +97,9 @@ public class MongoMBean implements DynamicMBean {
   @Override
   public Object getAttribute(final String name) throws AttributeNotFoundException {
     if (metricsMap.containsKey(name)) {
-      return new Attribute(name, metricsMap.get(name).get());
+      // DynamicMBean.getAttribute returns the value itself, not an Attribute. JMX exporters such
+      // as the OpenTelemetry agent drop a value they cannot read as a number.
+      return metricsMap.get(name).get();
     } else {
       throw new AttributeNotFoundException("getAttribute failed: value not found for: " + name);
     }

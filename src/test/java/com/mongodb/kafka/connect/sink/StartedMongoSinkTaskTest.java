@@ -821,7 +821,7 @@ final class StartedMongoSinkTaskTest {
   /** A write that times out, after the driver's own retry timed out too. */
   private static Answer<BulkWriteResult> timesOutAfterTheDriverRetry(final AtomicLong clockMs) {
     return invocation -> {
-      clockMs.addAndGet(2 * MongoSinkTask.DEFAULT_READ_TIMEOUT_MS);
+      clockMs.addAndGet(2 * MongoSinkConfig.SOCKET_READ_TIMEOUT_MS_DEFAULT);
       throw new MongoSocketReadTimeoutException(
           "read timed out", new ServerAddress(), new RuntimeException());
     };

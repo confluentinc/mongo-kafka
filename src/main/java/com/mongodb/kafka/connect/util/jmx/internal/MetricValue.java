@@ -53,6 +53,18 @@ public abstract class MetricValue {
     }
   }
 
+  /** A gauge whose combined value is the larger of the two values. */
+  public static final class MaxMetricValue extends MetricValue {
+    public MaxMetricValue(final String name, final Supplier<Long> supplier) {
+      super(name, supplier);
+    }
+
+    @Override
+    public MetricValue combine(final MetricValue prior) {
+      return new MaxMetricValue(this.getName(), () -> Math.max(prior.get(), this.get()));
+    }
+  }
+
   public static final class LatestMetricValue extends MetricValue {
     public LatestMetricValue(final String name, final Supplier<Long> supplier) {
       super(name, supplier);

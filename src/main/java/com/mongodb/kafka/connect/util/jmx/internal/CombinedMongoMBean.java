@@ -48,7 +48,8 @@ public class CombinedMongoMBean implements DynamicMBean {
   public Object getAttribute(final String attribute)
       throws AttributeNotFoundException, MBeanException, ReflectionException {
     if (metricsMap.containsKey(attribute)) {
-      return new Attribute(attribute, metricsMap.get(attribute).get());
+      // The value itself, not an Attribute; see MongoMBean.getAttribute.
+      return metricsMap.get(attribute).get();
     } else {
       throw new AttributeNotFoundException(
           "getAttribute failed: value not found for: " + attribute);

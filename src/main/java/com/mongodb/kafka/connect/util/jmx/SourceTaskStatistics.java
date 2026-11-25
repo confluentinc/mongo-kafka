@@ -18,8 +18,12 @@ package com.mongodb.kafka.connect.util.jmx;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.mongodb.lang.Nullable;
+
+import com.mongodb.kafka.connect.util.VisibleForTesting;
 import com.mongodb.kafka.connect.util.jmx.internal.Metric;
 import com.mongodb.kafka.connect.util.jmx.internal.MongoMBean;
+import com.mongodb.kafka.connect.util.jmx.internal.RunningDurationMetric;
 
 public class SourceTaskStatistics extends MongoMBean {
 
@@ -178,6 +182,46 @@ public class SourceTaskStatistics extends MongoMBean {
     DESCRIPTIONS.put(
         "getmore-commands-failed-duration-over-10000-ms",
         "The total number of failed getMore commands issued by a MongoDB source task with a duration that exceeded 10000ms.");
+
+    DESCRIPTIONS.put(
+        "initial-command-running-duration-ms",
+        "The number of milliseconds the oldest initial command issued by a MongoDB source task that has not finished yet has been running, or 0 if none is running. For a change stream, this is the time spent so far opening or resuming the cursor.");
+    DESCRIPTIONS.put(
+        "getmore-command-running-duration-ms",
+        "The number of milliseconds the oldest getMore command issued by a MongoDB source task that has not finished yet has been running, or 0 if none is running.");
+    DESCRIPTIONS.put(
+        "initial-commands-read-timeout",
+        "The total number of initial commands issued by a MongoDB source task that failed with a socket read timeout. Also counted in initial-commands-failed.");
+    DESCRIPTIONS.put(
+        "initial-commands-socket-error",
+        "The total number of initial commands issued by a MongoDB source task that failed with a socket error other than a read timeout, for example a connection reset or closed by the server. Also counted in initial-commands-failed.");
+    DESCRIPTIONS.put(
+        "getmore-commands-read-timeout",
+        "The total number of getMore commands issued by a MongoDB source task that failed with a socket read timeout. Also counted in getmore-commands-failed.");
+    DESCRIPTIONS.put(
+        "getmore-commands-socket-error",
+        "The total number of getMore commands issued by a MongoDB source task that failed with a socket error other than a read timeout, for example a connection reset or closed by the server. Also counted in getmore-commands-failed.");
+
+    putLongCommandDescriptions("initial-commands-successful", "successful initial commands");
+    putLongCommandDescriptions("getmore-commands-successful", "successful getMore commands");
+    putLongCommandDescriptions("initial-commands-failed", "failed initial commands");
+    putLongCommandDescriptions("getmore-commands-failed", "failed getMore commands");
+
+  }
+
+  /** Describes the buckets that {@link #COMMAND_MS_LIMITS} adds above {@link #MS_LIMITS}. */
+  private static void putLongCommandDescriptions(final String metric, final String commands) {
+    for (long limit : COMMAND_MS_LIMITS) {
+      if (limit > MS_LIMITS[MS_LIMITS.length - 1]) {
+        DESCRIPTIONS.put(
+            metric + "-duration-over-" + limit + "-ms",
+            "The total number of "
+                + commands
+                + " issued by a MongoDB source task with a duration that exceeded "
+                + limit
+                + "ms.");
+      }
+    }
   }
 
   private final Metric records = registerTotal("records");
@@ -189,13 +233,77 @@ public class SourceTaskStatistics extends MongoMBean {
 
   private final Metric inTaskPoll = registerMs("in-task-poll");
   private final Metric inConnectFramework = registerMs("in-connect-framework");
-  private final Metric initialCommandsSuccessful = registerMs("initial-commands-successful");
-  private final Metric getmoreCommandsSuccessful = registerMs("getmore-commands-successful");
-  private final Metric initialCommandsFailed = registerMs("initial-commands-failed");
-  private final Metric getmoreCommandsFailed = registerMs("getmore-commands-failed");
+  private final Metric initialCommandsSuccessful =
+      registerMs("initial-commands-successful", COMMAND_MS_LIMITS);
+  private final Metric getmoreCommandsSuccessful =
+      registerMs("getmore-commands-successful", COMMAND_MS_LIMITS);
+  private final Metric initialCommandsFailed =
+      registerMs("initial-commands-failed", COMMAND_MS_LIMITS);
+  private final Metric getmoreCommandsFailed =
+      registerMs("getmore-commands-failed", COMMAND_MS_LIMITS);
+  private final Metric initialCommandsReadTimeout = registerTotal("initial-commands-read-timeout");
+  private final Metric initialCommandsSocketError = registerTotal("initial-commands-socket-error");
+  private final Metric getmoreCommandsReadTimeout = registerTotal("getmore-commands-read-timeout");
+  private final Metric getmoreCommandsSocketError = registerTotal("getmore-commands-socket-error");
+  private final RunningDurationMetric initialCommandRunning;
+  private final RunningDurationMetric getmoreCommandRunning;
 
   public SourceTaskStatistics(final String name) {
+    this(name, newInitialCommandRunning(), newGetmoreCommandRunning());
+  }
+
+  /** For tests that control the clock of the running command trackers. */
+  @VisibleForTesting(otherwise = VisibleForTesting.AccessModifier.PRIVATE)
+  public SourceTaskStatistics(
+      final String name,
+      final RunningDurationMetric initialCommandRunning,
+      final RunningDurationMetric getmoreCommandRunning) {
     super(name);
+    this.initialCommandRunning = register(initialCommandRunning);
+    this.getmoreCommandRunning = register(getmoreCommandRunning);
+  }
+
+  private static RunningDurationMetric newInitialCommandRunning() {
+    return new RunningDurationMetric("initial-command-running-duration-ms");
+  }
+
+  private static RunningDurationMetric newGetmoreCommandRunning() {
+    return new RunningDurationMetric("getmore-command-running-duration-ms");
+  }
+
+  /** Records that a command started. Only initial (aggregate or find) and getMore are tracked. */
+  public void commandStarted(final String commandName, final int requestId) {
+    RunningDurationMetric running = runningCommands(commandName);
+    if (running != null) {
+      running.start(requestId);
+    }
+  }
+
+  /**
+   * Records that a command succeeded or failed. A command this statistics did not start, such as
+   * one that started in the other phase, is ignored.
+   */
+  public void commandFinished(final String commandName, final int requestId) {
+    RunningDurationMetric running = runningCommands(commandName);
+    if (running != null) {
+      running.finish(requestId);
+    }
+  }
+
+  /** Forgets every running command, for when the task's statistics close. */
+  public void clearRunningCommands() {
+    initialCommandRunning.clear();
+    getmoreCommandRunning.clear();
+  }
+
+  @Nullable
+  private RunningDurationMetric runningCommands(final String commandName) {
+    if ("getMore".equals(commandName)) {
+      return getmoreCommandRunning;
+    } else if ("aggregate".equals(commandName) || "find".equals(commandName)) {
+      return initialCommandRunning;
+    }
+    return null;
   }
 
   public Metric getRecords() {
@@ -241,6 +349,23 @@ public class SourceTaskStatistics extends MongoMBean {
   public Metric getGetmoreCommandsFailed() {
     return getmoreCommandsFailed;
   }
+
+  public Metric getInitialCommandsReadTimeout() {
+    return initialCommandsReadTimeout;
+  }
+
+  public Metric getInitialCommandsSocketError() {
+    return initialCommandsSocketError;
+  }
+
+  public Metric getGetmoreCommandsReadTimeout() {
+    return getmoreCommandsReadTimeout;
+  }
+
+  public Metric getGetmoreCommandsSocketError() {
+    return getmoreCommandsSocketError;
+  }
+
 
   @Override
   protected String getDescription(final String name) {
