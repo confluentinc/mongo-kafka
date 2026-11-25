@@ -37,9 +37,7 @@ public class MongoDBHelper
   private static final String MONGO_USERNAME = "test_username";
   private static final String MONGO_PASSWORD = "test_password";
   private static final String MONGO_IMAGE = "mongodb/mongodb-atlas-local";
-  // Pinned: "latest" moved to MongoDB 9.0.4 on 2026-11-09, and a change stream getMore in
-  // MongoSourceTaskIntegrationTest then never returns, so CI hung until its 1 hour timeout.
-  private static final String MONGO_TAG = "8.3.11";
+  private static final String MONGO_TAG = "latest";
 
   private static final MongoDBAtlasLocalContainer MONGO_CONTAINER =
       new MongoDBAtlasLocalContainer(MONGO_IMAGE + ":" + MONGO_TAG)
