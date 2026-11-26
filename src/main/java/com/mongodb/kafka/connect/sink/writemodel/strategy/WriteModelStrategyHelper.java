@@ -58,7 +58,8 @@ public final class WriteModelStrategyHelper {
           .map(s -> s.createWriteModel(sinkDocument))
           .orElse(null);
     } catch (Exception e) {
-      throw new DataException("Could not create write model", e);
+      throw new DataException(
+          "Could not create write model for a tombstone record (delete.on.null.values=true)", e);
     }
   }
 

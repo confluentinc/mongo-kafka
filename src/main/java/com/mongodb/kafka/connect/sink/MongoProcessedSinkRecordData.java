@@ -16,7 +16,11 @@
 
 package com.mongodb.kafka.connect.sink;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import org.apache.kafka.connect.errors.DataException;
@@ -111,7 +115,7 @@ final class MongoProcessedSinkRecordData {
           sinkRecord.kafkaPartition(),
           sinkRecord.kafkaOffset(),
           e);
-      DataException sanitized = new DataException(e.getMessage());
+      DataException sanitized = new DataException(safeMessage(e));
       exception = sanitized;
       if (config.logErrors()) {
         LOGGER.error(
@@ -132,5 +136,80 @@ final class MongoProcessedSinkRecordData {
       }
     }
     return Optional.empty();
+  }
+
+  private static final String CONNECTOR_PACKAGE = "com.mongodb.kafka.connect.";
+  private static final int MAX_CAUSE_DEPTH = 10;
+
+  /**
+   * Exact messages of driver/bson exceptions that are safe to surface: each is a fixed string, or
+   * is built only from a fixed set of values, never from record content.
+   * Matching is by exact equality, so no other third-party message can pass, whatever the driver
+   * version. Never add a prefix, pattern or message that interpolates a value from the record.
+   */
+  private static final Set<String> SAFE_THIRD_PARTY_MESSAGES = buildSafeThirdPartyMessages();
+
+  private static Set<String> buildSafeThirdPartyMessages() {
+    Set<String> messages =
+        new HashSet<>(
+            Arrays.asList(
+                // driver MongoNamespace, reached through the namespace mappers; mappings 13145,
+                // 12339
+                "state should be: collectionName is not empty",
+                "state should be: databaseName is not empty",
+                "collectionName can not be null",
+                "databaseName can not be null",
+                "fullName can not be null",
+                // driver write models, built by the write-model strategies and CDC handlers
+                "filter can not be null",
+                "update can not be null",
+                "replacement can not be null",
+                "document can not be null",
+                "options can not be null",
+                // bson ByteBufferBsonInput, malformed BSON bytes; mapping 588
+                "Found a BSON string that is not null-terminated"));
+    // driver MongoNamespace.checkDatabaseNameValidity; mapping 1395. The quoted character is one
+    // of this fixed set of prohibited characters.
+    for (char c : new char[] {'\0', '/', '\\', ' ', '"', '.'}) {
+      messages.add("state should be: databaseName does not contain '" + c + "'");
+    }
+    return Collections.unmodifiableSet(messages);
+  }
+
+  /**
+   * Builds an exception message that is safe to surface to Connect framework logs, the DLQ and
+   * error-mapping matching.
+   *
+   * <p>Walks the cause chain and keeps messages only from exceptions created by this connector's
+   * own code, whose throw sites interpolate metadata and configuration (field names, BSON types,
+   * topic/partition/offset) but not record content. The walk stops at the first exception created
+   * elsewhere (org.bson, the MongoDB driver, Kafka, Jackson, ...), whose message may echo record
+   * content, and records only its class name. If its message is one of {@link
+   * #SAFE_THIRD_PARTY_MESSAGES}, the walk records "class: message" instead and continues, so error
+   * mappings written against the original exception text still match.
+   */
+  static String safeMessage(final Throwable e) {
+    StringBuilder sb = new StringBuilder();
+    Throwable current = e;
+    for (int depth = 0; current != null && depth < MAX_CAUSE_DEPTH; depth++) {
+      if (depth > 0) {
+        sb.append(" Caused by: ");
+      }
+      if (isConnectorOwned(current)) {
+        sb.append(current.getMessage());
+      } else if (SAFE_THIRD_PARTY_MESSAGES.contains(current.getMessage())) {
+        sb.append(current.getClass().getName()).append(": ").append(current.getMessage());
+      } else {
+        sb.append(current.getClass().getName());
+        break;
+      }
+      current = current.getCause() == current ? null : current.getCause();
+    }
+    return sb.toString();
+  }
+
+  private static boolean isConnectorOwned(final Throwable t) {
+    StackTraceElement[] frames = t.getStackTrace();
+    return frames.length > 0 && frames[0].getClassName().startsWith(CONNECTOR_PACKAGE);
   }
 }
